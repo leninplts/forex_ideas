@@ -16,9 +16,10 @@ from forex_bot.config import settings
 logger = logging.getLogger(__name__)
 
 # Mapeo inverso: clase numerica -> senal de trading
-# El trainer mapea {-1:0, 0:1, 1:2}, asi que el inverso es:
-CLASS_TO_SIGNAL = {0: "SELL", 1: "HOLD", 2: "BUY"}
-SIGNAL_TO_CLASS = {"SELL": 0, "HOLD": 1, "BUY": 2}
+# TERNARIO: trainer mapea {-1:0, 0:1, 1:2}
+CLASS_TO_SIGNAL_TERNARY = {0: "SELL", 1: "HOLD", 2: "BUY"}
+# BINARIO: 0 = DOWN (SELL), 1 = UP (BUY)
+CLASS_TO_SIGNAL_BINARY = {0: "SELL", 1: "BUY"}
 
 
 class ModelPredictor:
@@ -111,10 +112,10 @@ class ModelPredictor:
     def predict(self, features_df: pd.DataFrame) -> dict:
         """
         Generar prediccion a partir de features calculadas.
+        Soporta modelos binarios (UP/DOWN) y ternarios (BUY/HOLD/SELL).
 
         Args:
-            features_df: DataFrame con features. Puede ser 1 fila (prediccion individual)
-                         o multiples filas.
+            features_df: DataFrame con features. Puede ser 1 fila o multiples.
 
         Returns:
             Dict con:
@@ -130,35 +131,74 @@ class ModelPredictor:
         X = self._align_features(features_df)
 
         # Predecir
-        pred_class = self.model.predict(X)
         pred_proba = self.model.predict_proba(X)
 
         # Tomar la ultima fila (prediccion mas reciente)
-        if len(pred_class) > 1:
-            pred_class = pred_class[-1:]
+        if len(pred_proba) > 1:
             pred_proba = pred_proba[-1:]
-
-        class_id = int(pred_class[0])
-        signal = CLASS_TO_SIGNAL.get(class_id, "HOLD")
         probas = pred_proba[0]
-        confidence = float(probas[class_id])
 
-        result = {
-            "signal": signal,
-            "confidence": confidence,
-            "probabilities": {
-                "SELL": float(probas[0]),
-                "HOLD": float(probas[1]),
-                "BUY": float(probas[2]),
-            },
-            "class_id": class_id,
-        }
+        # Detectar binario vs ternario por el shape de las probabilidades
+        is_binary = len(probas) == 2
 
-        logger.info(
-            "Prediccion: %s (confianza=%.2f%%) | SELL=%.1f%% HOLD=%.1f%% BUY=%.1f%%",
-            signal, confidence * 100,
-            probas[0] * 100, probas[1] * 100, probas[2] * 100,
-        )
+        if is_binary:
+            # BINARIO: proba[0]=DOWN, proba[1]=UP
+            # Usar threshold para decidir BUY/SELL/HOLD
+            prob_up = float(probas[1])
+            prob_down = float(probas[0])
+            threshold = settings.CONFIDENCE_THRESHOLD
+
+            if prob_up > threshold:
+                signal = "BUY"
+                confidence = prob_up
+            elif prob_down > threshold:
+                signal = "SELL"
+                confidence = prob_down
+            else:
+                signal = "HOLD"
+                confidence = max(prob_up, prob_down)
+
+            result = {
+                "signal": signal,
+                "confidence": confidence,
+                "probabilities": {
+                    "SELL": prob_down,
+                    "BUY": prob_up,
+                    "HOLD": 0.0,
+                },
+                "class_id": 1 if signal == "BUY" else 0,
+            }
+
+            logger.info(
+                "Prediccion: %s (confianza=%.2f%%) | DOWN=%.1f%% UP=%.1f%%",
+                signal, confidence * 100, prob_down * 100, prob_up * 100,
+            )
+        else:
+            # TERNARIO: proba[0]=SELL, proba[1]=HOLD, proba[2]=BUY
+            pred_class = self.model.predict(X)
+            if len(pred_class) > 1:
+                pred_class = pred_class[-1:]
+
+            class_id = int(pred_class[0])
+            signal = CLASS_TO_SIGNAL_TERNARY.get(class_id, "HOLD")
+            confidence = float(probas[class_id])
+
+            result = {
+                "signal": signal,
+                "confidence": confidence,
+                "probabilities": {
+                    "SELL": float(probas[0]),
+                    "HOLD": float(probas[1]),
+                    "BUY": float(probas[2]),
+                },
+                "class_id": class_id,
+            }
+
+            logger.info(
+                "Prediccion: %s (confianza=%.2f%%) | SELL=%.1f%% HOLD=%.1f%% BUY=%.1f%%",
+                signal, confidence * 100,
+                probas[0] * 100, probas[1] * 100, probas[2] * 100,
+            )
 
         return result
 

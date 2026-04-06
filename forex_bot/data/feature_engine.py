@@ -446,49 +446,62 @@ class FeatureEngine:
         """
         Crear variable target para el modelo.
 
-        Clasificacion ternaria:
-          1 = BUY  (precio sube > min_pips en las siguientes N velas)
-         -1 = SELL (precio baja > min_pips en las siguientes N velas)
+        Si min_pips == 0: Target BINARIO
+          1 = UP  (precio sube en las siguientes N velas)
+          0 = DOWN (precio baja en las siguientes N velas)
+
+        Si min_pips > 0: Target TERNARIO
+          1 = BUY  (precio sube > min_pips)
+         -1 = SELL (precio baja > min_pips)
           0 = HOLD (movimiento insuficiente)
 
         Args:
             df: DataFrame con columna 'close'
             horizon: Numero de velas hacia adelante para evaluar
-            min_pips: Movimiento minimo en pips para generar senal
+            min_pips: Movimiento minimo en pips. 0 = binario.
             pip_size: Tamano de 1 pip (0.0001 para EURUSD, 0.01 para USDJPY)
 
         Returns:
-            Series con valores {-1, 0, 1} del mismo tamanho que df.
-            Las ultimas N filas seran NaN (no hay datos futuros).
+            Series con el target. Las ultimas N filas seran NaN.
         """
         if horizon is None:
             horizon = settings.PREDICTION_HORIZON
         if min_pips is None:
             min_pips = settings.MIN_MOVEMENT_PIPS
 
-        min_move = min_pips * pip_size
-
         # Retorno futuro: precio en N velas - precio actual
         future_return = df["close"].shift(-horizon) - df["close"]
 
-        # Clasificar
-        target = pd.Series(0, index=df.index, name="target", dtype=int)
-        target[future_return > min_move] = 1     # BUY
-        target[future_return < -min_move] = -1   # SELL
+        if min_pips == 0:
+            # TARGET BINARIO: UP (1) o DOWN (0)
+            target = (future_return > 0).astype(int)
+            target = target.astype(float)  # Para poder poner NaN
+            target.iloc[-horizon:] = np.nan
+            target.name = "target"
 
-        # Las ultimas N filas no tienen datos futuros -> NaN
-        target.iloc[-horizon:] = np.nan
+            valid = target.dropna()
+            up_pct = (valid == 1).mean() * 100
+            down_pct = (valid == 0).mean() * 100
+            logger.info(
+                "Target BINARIO (horizon=%d): UP=%.1f%% | DOWN=%.1f%%",
+                horizon, up_pct, down_pct,
+            )
+        else:
+            # TARGET TERNARIO: BUY (1) / HOLD (0) / SELL (-1)
+            min_move = min_pips * pip_size
+            target = pd.Series(0, index=df.index, name="target", dtype=float)
+            target[future_return > min_move] = 1     # BUY
+            target[future_return < -min_move] = -1   # SELL
+            target.iloc[-horizon:] = np.nan
 
-        # Estadisticas
-        valid = target.dropna()
-        buy_pct = (valid == 1).mean() * 100
-        sell_pct = (valid == -1).mean() * 100
-        hold_pct = (valid == 0).mean() * 100
-
-        logger.info(
-            "Target creado (horizon=%d, min_pips=%d): BUY=%.1f%% | HOLD=%.1f%% | SELL=%.1f%%",
-            horizon, min_pips, buy_pct, hold_pct, sell_pct,
-        )
+            valid = target.dropna()
+            buy_pct = (valid == 1).mean() * 100
+            sell_pct = (valid == -1).mean() * 100
+            hold_pct = (valid == 0).mean() * 100
+            logger.info(
+                "Target TERNARIO (horizon=%d, min_pips=%d): BUY=%.1f%% | HOLD=%.1f%% | SELL=%.1f%%",
+                horizon, min_pips, buy_pct, hold_pct, sell_pct,
+            )
 
         return target
 

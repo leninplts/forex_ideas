@@ -114,9 +114,9 @@ PIP_SIZE = {
 # =============================================================================
 
 # Target variable
-PREDICTION_HORIZON = 5           # Predecir N velas hacia adelante
-MIN_MOVEMENT_PIPS = 10           # Minimo movimiento en pips para senal (10 pips = buen balance de clases)
-CONFIDENCE_THRESHOLD = 0.60      # Probabilidad minima para operar
+PREDICTION_HORIZON = 3           # Predecir N velas hacia adelante (3 = mejor prediccion que 5)
+MIN_MOVEMENT_PIPS = 0            # 0 = target binario (UP/DOWN). >0 = ternario (BUY/HOLD/SELL)
+CONFIDENCE_THRESHOLD = 0.52      # Probabilidad minima para operar (0.52 = filtro leve)
 
 # Modelo
 MODEL_TYPE = "xgboost"           # "xgboost", "lightgbm", "random_forest"
@@ -129,21 +129,20 @@ FEATURE_LOOKBACK = 20            # Periodos de lookback para features
 
 # XGBoost hyperparameters (API verificada contra XGBoost 3.2.0)
 # Nota: early_stopping_rounds y eval_metric van en el constructor de XGBClassifier
-# Nota: num_class NO se pasa, XGBClassifier lo infiere automaticamente
-# Nota: objective "multi:softprob" da probabilidades por clase
+# Nota: objective "binary:logistic" para target binario, "multi:softprob" para ternario
 XGBOOST_PARAMS = {
-    "n_estimators": 500,
-    "max_depth": 6,
+    "n_estimators": 300,
+    "max_depth": 4,
     "learning_rate": 0.05,
     "subsample": 0.8,
-    "colsample_bytree": 0.8,
-    "min_child_weight": 5,
-    "gamma": 0.1,
-    "reg_alpha": 0.1,
-    "reg_lambda": 1.0,
-    "objective": "multi:softprob",
-    "eval_metric": "mlogloss",
-    "early_stopping_rounds": 50,
+    "colsample_bytree": 0.7,
+    "min_child_weight": 10,
+    "gamma": 0.2,
+    "reg_alpha": 0.5,
+    "reg_lambda": 2.0,
+    "objective": "binary:logistic",
+    "eval_metric": "logloss",
+    "early_stopping_rounds": 30,
     "random_state": 42,
     "n_jobs": -1,
 }
@@ -153,15 +152,15 @@ XGBOOST_PARAMS = {
 # Nota: eval_metric se pasa en fit(), no aqui
 # Nota: num_class NO se pasa, LGBMClassifier lo infiere automaticamente
 LIGHTGBM_PARAMS = {
-    "n_estimators": 500,
-    "max_depth": 6,
+    "n_estimators": 300,
+    "max_depth": 4,
     "learning_rate": 0.05,
     "subsample": 0.8,
-    "colsample_bytree": 0.8,
-    "min_child_weight": 5,
+    "colsample_bytree": 0.7,
+    "min_child_weight": 10,
     "num_leaves": 31,
-    "objective": "multiclass",
-    "metric": "multi_logloss",
+    "objective": "binary",
+    "metric": "binary_logloss",
     "random_state": 42,
     "n_jobs": -1,
     "verbose": -1,

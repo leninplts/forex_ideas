@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Forex Bot - Backtest Runner")
-    parser.add_argument("--symbol", type=str, default="EURUSD", help="Par de divisas (default: EURUSD)")
+    parser.add_argument("--symbol", type=str, default="EURUSDm", help="Par de divisas (default: EURUSDm)")
     parser.add_argument("--model", type=str, default=None, help="Tipo de modelo: xgboost, lightgbm (default: settings)")
     parser.add_argument("--from-csv", type=str, default=None, help="Cargar datos de archivo CSV en vez de MT5")
     parser.add_argument("--bars", type=int, default=None, help="Numero de barras historicas (default: settings)")
@@ -85,15 +85,49 @@ def load_data(symbol: str, from_csv: str = None, bars: int = None) -> pd.DataFra
         collector.disconnect()
 
 
+def load_htf_data(symbol: str, pp: DataPreprocessor) -> tuple:
+    """
+    Cargar datos H4 y D1 para features multi-timeframe.
+
+    Args:
+        symbol: Par de divisas (ej: "EURUSDm")
+        pp: DataPreprocessor para limpieza
+
+    Returns:
+        Tuple (df_h4, df_d1) o (None, None) si no se encuentran.
+    """
+    data_dir = settings.DATA_DIR
+    df_h4, df_d1 = None, None
+
+    h4_path = data_dir / f"{symbol}_{settings.TIMEFRAME_HIGHER}.csv"
+    d1_path = data_dir / f"{symbol}_{settings.TIMEFRAME_DAILY}.csv"
+
+    if h4_path.exists():
+        df_h4 = pd.read_csv(h4_path, index_col="time", parse_dates=True)
+        df_h4 = pp.clean_data(df_h4)
+        logger.info("Datos H4 cargados: %d barras", len(df_h4))
+    else:
+        logger.warning("No se encontro %s, sin features H4", h4_path)
+
+    if d1_path.exists():
+        df_d1 = pd.read_csv(d1_path, index_col="time", parse_dates=True)
+        df_d1 = pp.clean_data(df_d1)
+        logger.info("Datos D1 cargados: %d barras", len(df_d1))
+    else:
+        logger.warning("No se encontro %s, sin features D1", d1_path)
+
+    return df_h4, df_d1
+
+
 def run_backtest(
-    symbol: str = "EURUSD",
+    symbol: str = "EURUSDm",
     model_type: str = None,
     from_csv: str = None,
     bars: int = None,
     save_model: bool = False,
 ) -> dict:
     """
-    Ejecutar backtest completo.
+    Ejecutar backtest completo con multi-timeframe y target binario.
 
     Args:
         symbol: Par de divisas
@@ -113,27 +147,39 @@ def run_backtest(
     print(f"{'='*60}\n")
 
     # 1. Cargar datos
-    print("[1/6] Cargando datos...")
+    print("[1/7] Cargando datos...")
     df = load_data(symbol, from_csv, bars)
 
     # 2. Limpiar datos
-    print("[2/6] Limpiando y preparando datos...")
+    print("[2/7] Limpiando y preparando datos...")
     pp = DataPreprocessor()
     df = pp.clean_data(df)
 
-    # 3. Calcular features
-    print("[3/6] Calculando indicadores y features...")
+    # 3. Calcular features H1
+    print("[3/7] Calculando indicadores y features...")
     fe = FeatureEngine()
     df = fe.add_all_features(df)
 
+    # 4. Agregar features multi-timeframe (H4 + D1)
+    print("[4/7] Agregando features multi-timeframe (H4 + D1)...")
+    df_h4, df_d1 = load_htf_data(symbol, pp)
+
+    if df_h4 is not None:
+        df = fe.add_higher_timeframe_features(df, df_h4, suffix="h4")
+        print(f"       +features H4 agregadas")
+    if df_d1 is not None:
+        df = fe.add_higher_timeframe_features(df, df_d1, suffix="d1")
+        print(f"       +features D1 agregadas")
+
+    # Crear target
     pip_size = settings.PIP_SIZE.get(symbol, 0.0001)
     df["target"] = fe.create_target(df, pip_size=pip_size)
 
-    n_features = len(fe.feature_names)
-    print(f"       {n_features} features generadas")
+    n_features = len(fe.get_feature_columns(df))
+    print(f"       {n_features} features totales")
 
-    # 4. Entrenar modelo con walk-forward
-    print("[4/6] Entrenando modelo (walk-forward validation)...")
+    # 5. Entrenar modelo
+    print("[5/7] Entrenando modelo...")
     trainer = ModelTrainer(model_type=model_type)
     X, y = trainer.prepare_features(df)
 
@@ -164,29 +210,51 @@ def run_backtest(
     for _, row in fi.head(5).iterrows():
         print(f"         - {row['feature']}: {row['importance']:.4f}")
 
-    # 5. Generar senales para backtest
-    print("[5/6] Ejecutando backtest...")
+    # 6. Generar senales para backtest
+    print("[6/7] Ejecutando backtest...")
 
-    # Predecir en todo el test set
-    y_pred = trainer.model.predict(X_test)
-
-    # Remap: {0:SELL, 1:HOLD, 2:BUY} -> {-1, 0, 1}
-    signal_map = {0: -1, 1: 0, 2: 1}
+    # Usar probabilidades para generar senales con umbral de confianza
+    y_proba = trainer.model.predict_proba(X_test)
+    threshold = settings.CONFIDENCE_THRESHOLD
 
     # Crear Series de senales alineada con df completo
     signals = pd.Series(0, index=df.index, dtype=int)
-    for idx, pred in zip(X_test.index, y_pred):
-        if idx in df.index:
-            pos = df.index.get_loc(idx)
-            signals.iloc[pos] = signal_map.get(int(pred), 0)
+
+    is_binary = y_proba.shape[1] == 2
+
+    for i, idx in enumerate(X_test.index):
+        if idx not in df.index:
+            continue
+        pos = df.index.get_loc(idx)
+
+        if is_binary:
+            # Binario: proba[0]=DOWN, proba[1]=UP
+            prob_up = y_proba[i, 1]
+            if prob_up > threshold:
+                signals.iloc[pos] = 1     # BUY
+            elif prob_up < (1 - threshold):
+                signals.iloc[pos] = -1    # SELL
+            # else: 0 = HOLD
+        else:
+            # Ternario: proba[0]=SELL, proba[1]=HOLD, proba[2]=BUY
+            pred = int(np.argmax(y_proba[i]))
+            conf = y_proba[i, pred]
+            if conf > threshold:
+                signal_map = {0: -1, 1: 0, 2: 1}
+                signals.iloc[pos] = signal_map.get(pred, 0)
+
+    n_buy = (signals == 1).sum()
+    n_sell = (signals == -1).sum()
+    n_hold = (signals == 0).sum()
+    print(f"       Senales: BUY={n_buy} | SELL={n_sell} | HOLD={n_hold}")
 
     # Ejecutar backtest
     bt = Backtester(initial_balance=settings.BACKTEST_INITIAL_BALANCE)
     result = bt.run(df, signals, symbol=symbol)
     metrics = result["metrics"]
 
-    # 6. Reporte
-    print("[6/6] Generando reporte...\n")
+    # 7. Reporte
+    print("[7/7] Generando reporte...\n")
     PerformanceMetrics.print_report(metrics)
 
     # Evaluar criterios minimos

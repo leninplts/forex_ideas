@@ -61,6 +61,7 @@ class ModelTrainer:
         """
         Separar features (X) del target (y).
         Elimina columnas OHLCV, target, y filas con NaN.
+        Detecta automaticamente si el target es binario o ternario.
 
         Args:
             df: DataFrame con features y columna 'target'
@@ -89,17 +90,29 @@ class ModelTrainer:
             y = y.loc[X.index]
             logger.info("Eliminadas %d filas con NaN en features", n_nan)
 
-        # Remap target: {-1, 0, 1} -> {0, 1, 2} para clasificacion multiclase
-        # XGBoost y LightGBM esperan clases empezando desde 0
-        y = y.map({-1: 0, 0: 1, 1: 2}).astype(int)
+        # Detectar tipo de target
+        unique_vals = set(y.unique())
+
+        if unique_vals.issubset({0, 1, 0.0, 1.0}):
+            # TARGET BINARIO: ya esta en {0, 1}, no necesita remap
+            self._is_binary = True
+            y = y.astype(int)
+            logger.info(
+                "Features preparadas: %d muestras, %d features | BINARIO: DOWN=%d, UP=%d",
+                len(X), len(feature_cols),
+                (y == 0).sum(), (y == 1).sum(),
+            )
+        else:
+            # TARGET TERNARIO: remap {-1, 0, 1} -> {0, 1, 2}
+            self._is_binary = False
+            y = y.map({-1: 0, 0: 1, 1: 2}).astype(int)
+            logger.info(
+                "Features preparadas: %d muestras, %d features | TERNARIO: SELL=%d, HOLD=%d, BUY=%d",
+                len(X), len(feature_cols),
+                (y == 0).sum(), (y == 1).sum(), (y == 2).sum(),
+            )
 
         self._feature_names = list(X.columns)
-
-        logger.info(
-            "Features preparadas: %d muestras, %d features | Clases: SELL=%d, HOLD=%d, BUY=%d",
-            len(X), len(self._feature_names),
-            (y == 0).sum(), (y == 1).sum(), (y == 2).sum(),
-        )
         return X, y
 
     @staticmethod
@@ -132,15 +145,28 @@ class ModelTrainer:
     # ------------------------------------------------------------------
 
     def _create_model(self, params: dict = None):
-        """Crear instancia del modelo segun tipo."""
+        """
+        Crear instancia del modelo segun tipo.
+        Ajusta automaticamente objective y eval_metric segun si es binario o ternario.
+        """
+        is_binary = getattr(self, "_is_binary", True)
+
         if self.model_type == "xgboost":
             import xgboost as xgb
 
             p = (params or settings.XGBOOST_PARAMS).copy()
-            # XGBoost 3.2: early_stopping_rounds va en el constructor
-            early_stopping = p.pop("early_stopping_rounds", 50)
-            eval_metric = p.pop("eval_metric", "mlogloss")
-            p.pop("num_class", None)  # XGBClassifier lo infiere automaticamente
+            early_stopping = p.pop("early_stopping_rounds", 30)
+            p.pop("num_class", None)
+
+            # Ajustar objective y metric segun tipo de target
+            # Forzar valores correctos independientemente de lo que digan los settings
+            p.pop("eval_metric", None)  # Remover siempre, lo seteamos abajo
+            if is_binary:
+                p["objective"] = "binary:logistic"
+                eval_metric = "logloss"
+            else:
+                p["objective"] = "multi:softprob"
+                eval_metric = "mlogloss"
 
             return xgb.XGBClassifier(
                 early_stopping_rounds=early_stopping,
@@ -153,8 +179,14 @@ class ModelTrainer:
             import lightgbm as lgb
 
             p = (params or settings.LIGHTGBM_PARAMS).copy()
-            p.pop("metric", None)  # Se pasa como eval_metric en fit()
-            p.pop("early_stopping_rounds", None)  # Se usa callback en fit()
+            p.pop("metric", None)
+            p.pop("early_stopping_rounds", None)
+
+            # Ajustar objective segun tipo de target
+            if is_binary:
+                p["objective"] = "binary"
+            else:
+                p["objective"] = "multiclass"
 
             return lgb.LGBMClassifier(
                 importance_type="gain",
@@ -258,9 +290,15 @@ class ModelTrainer:
 
         acc = accuracy_score(y_test, y_pred)
         f1 = f1_score(y_test, y_pred, average="weighted")
+
+        if self._is_binary:
+            target_names = ["DOWN", "UP"]
+        else:
+            target_names = ["SELL", "HOLD", "BUY"]
+
         report = classification_report(
             y_test, y_pred,
-            target_names=["SELL", "HOLD", "BUY"],
+            target_names=target_names,
             output_dict=True,
         )
         cm = confusion_matrix(y_test, y_pred)
