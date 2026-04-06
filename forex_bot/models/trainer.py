@@ -102,6 +102,31 @@ class ModelTrainer:
         )
         return X, y
 
+    @staticmethod
+    def _compute_sample_weights(y: pd.Series) -> np.ndarray:
+        """
+        Calcular pesos por muestra para compensar desbalance de clases.
+        Las clases minoritarias reciben mayor peso.
+        Usa el esquema 'balanced': weight_i = n_samples / (n_classes * count_i)
+        """
+        classes = y.unique()
+        n_samples = len(y)
+        n_classes = len(classes)
+        weights = np.ones(n_samples)
+
+        for c in classes:
+            mask = (y == c)
+            count = mask.sum()
+            if count > 0:
+                w = n_samples / (n_classes * count)
+                weights[mask.values] = w
+
+        logger.info(
+            "Sample weights: %s",
+            {int(c): round(n_samples / (n_classes * (y == c).sum()), 2) for c in sorted(classes)},
+        )
+        return weights
+
     # ------------------------------------------------------------------
     # Entrenamiento
     # ------------------------------------------------------------------
@@ -162,6 +187,9 @@ class ModelTrainer:
         """
         self.model = self._create_model(params)
 
+        # Calcular sample_weight para compensar desbalance de clases
+        sample_weights = self._compute_sample_weights(y_train)
+
         logger.info(
             "Entrenando %s: train=%d, val=%d, features=%d",
             self.model_type, len(X_train), len(X_val), X_train.shape[1],
@@ -171,6 +199,7 @@ class ModelTrainer:
             # XGBoost 3.2: eval_set en fit(), early_stopping ya en constructor
             self.model.fit(
                 X_train, y_train,
+                sample_weight=sample_weights,
                 eval_set=[(X_val, y_val)],
                 verbose=False,
             )
@@ -182,6 +211,7 @@ class ModelTrainer:
             # LightGBM 4.6: eval_set en fit(), early stopping via callbacks
             self.model.fit(
                 X_train, y_train,
+                sample_weight=sample_weights,
                 eval_set=[(X_val, y_val)],
                 callbacks=[
                     lgb.early_stopping(stopping_rounds=50),

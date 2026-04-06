@@ -115,7 +115,7 @@ PIP_SIZE = {
 
 # Target variable
 PREDICTION_HORIZON = 5           # Predecir N velas hacia adelante
-MIN_MOVEMENT_PIPS = 15           # Minimo movimiento en pips para senal
+MIN_MOVEMENT_PIPS = 10           # Minimo movimiento en pips para senal (10 pips = buen balance de clases)
 CONFIDENCE_THRESHOLD = 0.60      # Probabilidad minima para operar
 
 # Modelo
@@ -235,8 +235,8 @@ LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 BACKTEST_START_DATE = "2024-01-01"
 BACKTEST_END_DATE = "2025-12-31"
 BACKTEST_INITIAL_BALANCE = 100.0
-BACKTEST_COMMISSION_PER_LOT = 7.0    # $7 por lote estandar
-BACKTEST_SPREAD_PIPS = 1.5           # Spread simulado en pips
+BACKTEST_COMMISSION_PER_LOT = 0.0    # $0 - Exness Standard no cobra comision
+BACKTEST_SPREAD_PIPS = 1.0           # ~1 pip spread real de Exness Standard EURUSD
 
 # Criterios minimos para aprobar backtest
 BACKTEST_MIN_PROFIT_FACTOR = 1.3
