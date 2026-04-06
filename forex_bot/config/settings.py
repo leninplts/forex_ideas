@@ -28,7 +28,18 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 # =============================================================================
 
 # Pares de divisas a operar
-SYMBOLS = ["EURUSD", "GBPUSD", "USDJPY"]
+# NOTA: Exness usa sufijo "m" para cuentas Standard (EURUSDm, GBPUSDm, etc.)
+# Otros brokers pueden usar sin sufijo (EURUSD) o con otro sufijo (.i, .e, etc.)
+# Ajustar segun tu broker
+SYMBOL_SUFFIX = "m"  # Sufijo del broker (Exness Standard = "m", IC Markets = "")
+SYMBOLS = ["EURUSDm", "GBPUSDm", "USDJPYm"]
+
+# Nombre base sin sufijo (para calculos de pip, etc.)
+SYMBOLS_BASE = {
+    "EURUSDm": "EURUSD",
+    "GBPUSDm": "GBPUSD",
+    "USDJPYm": "USDJPY",
+}
 
 # Timeframes
 # Constantes de MT5: M1=1, M5=5, M15=15, M30=30, H1=16385, H4=16388, D1=16408

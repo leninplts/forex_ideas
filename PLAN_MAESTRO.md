@@ -406,7 +406,7 @@ El bot operara a traves de MetaTrader 5 con gestion de riesgo estricta.
 
 ### Tareas:
 
-- [ ] 5.1 - Crear execution/mt5_executor.py
+- [x] 5.1 - Crear execution/mt5_executor.py (COMPLETADO - API verificada MT5 oficial)
   Clase: MT5Executor
   Metodos:
   - __init__(self):
@@ -437,7 +437,7 @@ El bot operara a traves de MetaTrader 5 con gestion de riesgo estricta.
     - Historial de ordenes cerradas
     - Para analisis de rendimiento
 
-- [ ] 5.2 - Crear execution/order_manager.py
+- [x] 5.2 - Crear execution/order_manager.py (COMPLETADO - 31/31 tests passed)
   Clase: OrderManager
   Metodos:
   - __init__(self, executor, risk_manager):
