@@ -12,9 +12,9 @@ Loop principal:
   4. Shutdown graceful con Ctrl+C
 
 Uso:
-  python -m forex_bot.main
-  python -m forex_bot.main --mode demo
-  python -m forex_bot.main --mode live  (PELIGRO: dinero real)
+  python forex_bot/main.py              (demo por defecto)
+  python forex_bot/main.py --mode live  (PELIGRO: dinero real)
+  python forex_bot/main.py --verbose    (logging detallado)
 """
 import argparse
 import logging
@@ -22,6 +22,13 @@ import signal
 import sys
 import time
 from datetime import datetime
+from pathlib import Path
+
+# Agregar directorio raiz al path para que funcione tanto con
+# "python forex_bot/main.py" como con "python -m forex_bot.main"
+_ROOT = str(Path(__file__).resolve().parent.parent)
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
 
 from forex_bot.config import settings
 from forex_bot.data.collector import DataCollector

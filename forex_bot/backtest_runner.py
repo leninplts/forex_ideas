@@ -11,14 +11,20 @@ Flujo:
   7. Guardar modelo si aprueba criterios minimos
 
 Uso:
-  python -m forex_bot.backtest_runner
-  python -m forex_bot.backtest_runner --symbol EURUSD --model xgboost
-  python -m forex_bot.backtest_runner --from-csv data_cache/EURUSD_H1.csv
+  python forex_bot/backtest_runner.py
+  python forex_bot/backtest_runner.py --symbol EURUSDm --model xgboost
+  python forex_bot/backtest_runner.py --from-csv data_cache/EURUSDm_H1.csv
+  python forex_bot/backtest_runner.py --save-model
 """
 import argparse
 import logging
 import sys
 from pathlib import Path
+
+# Agregar directorio raiz al path
+_ROOT = str(Path(__file__).resolve().parent.parent)
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
 
 import numpy as np
 import pandas as pd
