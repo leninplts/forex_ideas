@@ -116,7 +116,7 @@ El bot operara a traves de MetaTrader 5 con gestion de riesgo estricta.
 
 ### Tareas:
 
-- [ ] 2.1 - Crear data/collector.py
+- [x] 2.1 - Crear data/collector.py (COMPLETADO)
   Clase: DataCollector
   Metodos:
   - __init__(self): inicializar conexion MT5
@@ -143,7 +143,7 @@ El bot operara a traves de MetaTrader 5 con gestion de riesgo estricta.
   - Logging de todos los errores
   - Validar que MT5 este instalado antes de intentar conectar
 
-- [ ] 2.2 - Crear data/preprocessor.py
+- [x] 2.2 - Crear data/preprocessor.py (COMPLETADO)
   Clase: DataPreprocessor
   Metodos:
   - clean_data(df) -> pd.DataFrame:
@@ -164,7 +164,7 @@ El bot operara a traves de MetaTrader 5 con gestion de riesgo estricta.
     - Generar multiples splits para walk-forward analysis
     - Retornar lista de (train_df, val_df) tuples
 
-- [ ] 2.3 - Crear data/feature_engine.py
+- [x] 2.3 - Crear data/feature_engine.py (COMPLETADO - 36/36 tests passed)
   Clase: FeatureEngine
   Metodos:
   - add_all_features(df) -> pd.DataFrame:
