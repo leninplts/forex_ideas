@@ -131,7 +131,7 @@ FEATURE_LOOKBACK = 20            # Periodos de lookback para features
 # Nota: early_stopping_rounds y eval_metric van en el constructor de XGBClassifier
 # Nota: objective "binary:logistic" para target binario, "multi:softprob" para ternario
 XGBOOST_PARAMS = {
-    "n_estimators": 300,
+    "n_estimators": 500,            # Optimo: early stopping para en ~328
     "max_depth": 4,
     "learning_rate": 0.05,
     "subsample": 0.8,

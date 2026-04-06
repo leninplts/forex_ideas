@@ -18,9 +18,13 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import (
     accuracy_score,
+    brier_score_loss,
     classification_report,
     confusion_matrix,
     f1_score,
+    precision_score,
+    recall_score,
+    roc_auc_score,
 )
 from sklearn.model_selection import TimeSeriesSplit
 
@@ -303,12 +307,35 @@ class ModelTrainer:
         )
         cm = confusion_matrix(y_test, y_pred)
 
-        logger.info("Evaluacion: Accuracy=%.4f | F1=%.4f", acc, f1)
+        # Metricas extendidas
+        precision = precision_score(y_test, y_pred, average="weighted")
+        recall = recall_score(y_test, y_pred, average="weighted")
+
+        # AUC y Brier (solo para binario, para ternario se calcula diferente)
+        if self._is_binary:
+            proba_positive = y_proba[:, 1]
+            auc = roc_auc_score(y_test, proba_positive)
+            brier = brier_score_loss(y_test, proba_positive)
+        else:
+            try:
+                auc = roc_auc_score(y_test, y_proba, multi_class="ovr", average="weighted")
+            except ValueError:
+                auc = 0.0
+            brier = 0.0  # Brier no aplica directamente a multiclase
+
+        logger.info(
+            "Evaluacion: Accuracy=%.4f | F1=%.4f | AUC=%.4f | Brier=%.4f",
+            acc, f1, auc, brier,
+        )
         logger.info("Confusion Matrix:\n%s", cm)
 
         return {
             "accuracy": acc,
             "f1_weighted": f1,
+            "precision": precision,
+            "recall": recall,
+            "auc": auc,
+            "brier": brier,
             "classification_report": report,
             "confusion_matrix": cm.tolist(),
             "probabilities": y_proba,

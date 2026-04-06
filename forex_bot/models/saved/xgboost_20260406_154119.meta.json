@@ -1,6 +1,6 @@
 {
   "model_type": "xgboost",
-  "train_date": "2026-04-06T15:18:27.254455",
+  "train_date": "2026-04-06T15:41:18.807220",
   "train_samples": 7016,
   "val_samples": 1239,
   "n_features": 71,
@@ -77,5 +77,5 @@
     "trend_d1",
     "atr_d1"
   ],
-  "best_iteration": 299
+  "best_iteration": 346
 }

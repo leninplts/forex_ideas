@@ -203,6 +203,10 @@ def run_backtest(
     eval_metrics = trainer.evaluate(X_test, y_test)
     print(f"       Model accuracy: {eval_metrics['accuracy']:.2%}")
     print(f"       Model F1:       {eval_metrics['f1_weighted']:.2%}")
+    print(f"       Model AUC:      {eval_metrics['auc']:.4f}")
+    print(f"       Model Brier:    {eval_metrics['brier']:.4f}")
+    print(f"       Precision:      {eval_metrics['precision']:.2%}")
+    print(f"       Recall:         {eval_metrics['recall']:.2%}")
 
     # Feature importance
     fi = trainer.get_feature_importance()
