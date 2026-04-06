@@ -23,6 +23,7 @@ scikit-learn==1.8.0
 xgboost==3.2.0
 lightgbm==4.6.0
 scipy==1.17.1
+shap>=0.45.0
 
 # --- Serializacion de modelos ---
 joblib==1.5.3

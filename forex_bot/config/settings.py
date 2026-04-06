@@ -116,17 +116,41 @@ PIP_SIZE = {
 
 # Target variable
 PREDICTION_HORIZON = 3           # Predecir N velas hacia adelante (3 = mejor prediccion que 5)
-MIN_MOVEMENT_PIPS = 0            # 0 = target binario (UP/DOWN). >0 = ternario (BUY/HOLD/SELL)
-CONFIDENCE_THRESHOLD = 0.52      # Probabilidad minima para operar (0.52 = filtro leve)
+MIN_MOVEMENT_PIPS = 10           # 0 = target binario (UP/DOWN). >0 = ternario (BUY/HOLD/SELL)
+                                 # 10 pips = zona muerta para filtrar ruido (~1 ATR en H1)
+CONFIDENCE_THRESHOLD = 0.55      # Probabilidad minima para operar (subido de 0.52 para ser mas selectivo)
 
 # Modelo
-MODEL_TYPE = "xgboost"           # "xgboost", "lightgbm", "random_forest"
+MODEL_TYPE = "ensemble"          # "xgboost", "lightgbm", "ensemble" (XGBoost + LightGBM)
+CALIBRATE_PROBABILITIES = True   # Calibrar probabilidades post-entrenamiento
 MODEL_RETRAIN_DAYS = 30          # Reentrenar cada N dias
 TRAIN_WINDOW_DAYS = 365          # Ventana de entrenamiento en dias
 VALIDATION_WINDOW_DAYS = 60      # Ventana de validacion en dias
 
 # Features
 FEATURE_LOOKBACK = 20            # Periodos de lookback para features
+
+# Feature Selection (basada en analisis SHAP + correlacion + importancia)
+# Activar para usar solo features seleccionadas en vez de todas las ~71
+FEATURE_SELECTION_ENABLED = True
+SELECTED_FEATURES = [
+    # === Multi-timeframe (alto SHAP) ===
+    "rsi_h4", "trend_h4", "rsi_d1", "trend_d1", "sma50_d1",
+    # === Tendencia ===
+    "sma_200_dist", "sma_50_dist", "sma_20_dist", "sma_200_slope",
+    "sma_50_slope", "sma_20_slope", "sma_cross_50_200",
+    # === Momentum ===
+    "rsi_14", "rsi_slope", "macd_histogram", "di_minus_14",
+    # === Volatilidad ===
+    "atr_14", "atr_ratio", "bb_bandwidth", "candle_range_pct",
+    # === Volumen ===
+    "obv", "volume_ratio", "volume_ma",
+    # === Price action ===
+    "return_1", "return_3", "return_5",
+    "dist_low_10", "dist_low_20", "dist_high_10", "dist_high_20",
+    "bullish_candle",
+]
+# 31 features seleccionadas de 71 (eliminadas 40 = 56% de reduccion)
 
 # XGBoost hyperparameters (API verificada contra XGBoost 3.2.0)
 # Nota: early_stopping_rounds y eval_metric van en el constructor de XGBClassifier

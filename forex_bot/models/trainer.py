@@ -26,6 +26,7 @@ from sklearn.metrics import (
     recall_score,
     roc_auc_score,
 )
+from sklearn.calibration import CalibratedClassifierCV
 from sklearn.model_selection import TimeSeriesSplit
 
 from forex_bot.config import settings
@@ -61,14 +62,18 @@ class ModelTrainer:
     # Preparacion de datos
     # ------------------------------------------------------------------
 
-    def prepare_features(self, df: pd.DataFrame) -> tuple:
+    def prepare_features(self, df: pd.DataFrame, use_selected: bool = None) -> tuple:
         """
         Separar features (X) del target (y).
         Elimina columnas OHLCV, target, y filas con NaN.
         Detecta automaticamente si el target es binario o ternario.
 
+        Si FEATURE_SELECTION_ENABLED esta activo, usa solo las features
+        de SELECTED_FEATURES (basadas en analisis SHAP).
+
         Args:
             df: DataFrame con features y columna 'target'
+            use_selected: Forzar uso de features seleccionadas (None = usar settings)
 
         Returns:
             Tuple (X: pd.DataFrame, y: pd.Series) limpios y listos para entrenar.
@@ -78,6 +83,21 @@ class ModelTrainer:
 
         # Separar features del target
         feature_cols = [c for c in df.columns if c not in NON_FEATURE_COLS]
+
+        # Aplicar feature selection si esta habilitada
+        use_selection = use_selected if use_selected is not None else settings.FEATURE_SELECTION_ENABLED
+        if use_selection and hasattr(settings, "SELECTED_FEATURES") and settings.SELECTED_FEATURES:
+            selected = [c for c in settings.SELECTED_FEATURES if c in feature_cols]
+            dropped = len(feature_cols) - len(selected)
+            if selected:
+                feature_cols = selected
+                logger.info(
+                    "Feature selection activa: %d features seleccionadas (%d eliminadas)",
+                    len(selected), dropped,
+                )
+            else:
+                logger.warning("Ninguna feature seleccionada encontrada en el DataFrame, usando todas")
+
         X = df[feature_cols].copy()
         y = df["target"].copy()
 
@@ -352,7 +372,17 @@ class ModelTrainer:
         if self.model is None:
             raise ValueError("Modelo no entrenado.")
 
-        importances = self.model.feature_importances_
+        # Manejar modelos calibrados (CalibratedClassifierCV no tiene feature_importances_)
+        model = self.model
+        if hasattr(self, "_uncalibrated_model") and self._uncalibrated_model is not None:
+            model = self._uncalibrated_model
+
+        try:
+            importances = model.feature_importances_
+        except AttributeError:
+            # Fallback: importancias uniformes
+            logger.warning("Modelo no soporta feature_importances_, retornando importancias uniformes")
+            importances = np.ones(len(self._feature_names)) / len(self._feature_names)
         fi = pd.DataFrame({
             "feature": self._feature_names,
             "importance": importances,
@@ -360,6 +390,130 @@ class ModelTrainer:
 
         logger.info("Top 10 features:\n%s", fi.head(10).to_string())
         return fi
+
+    # ------------------------------------------------------------------
+    # Calibracion de probabilidades
+    # ------------------------------------------------------------------
+
+    def calibrate(
+        self,
+        X_cal: pd.DataFrame,
+        y_cal: pd.Series,
+        method: str = "isotonic",
+    ):
+        """
+        Calibrar las probabilidades del modelo para que sean mas realistas.
+        Un modelo con p=0.60 deberia acertar ~60% de las veces si esta calibrado.
+
+        XGBoost/LightGBM tienden a producir probabilidades no calibradas,
+        especialmente cuando se usan sample_weights o early stopping.
+
+        Args:
+            X_cal: Features para calibracion (idealmente datos NO usados en train)
+            y_cal: Target para calibracion
+            method: "isotonic" (no-parametrico, mas flexible) o "sigmoid" (Platt scaling)
+
+        Returns:
+            Modelo calibrado (reemplaza self.model)
+        """
+        if self.model is None:
+            raise ValueError("Modelo no entrenado. Llamar a train() primero.")
+
+        logger.info("Calibrando probabilidades con metodo '%s' (n=%d)...", method, len(X_cal))
+
+        # Para modelos ya entrenados, usamos cv="prefit" (sklearn >= 1.4)
+        # En versiones anteriores, cv="prefit" puede no funcionar con todos los estimadores.
+        # En ese caso, usamos un wrapper que pasa el predict_proba directamente.
+        try:
+            calibrated = CalibratedClassifierCV(
+                self.model,
+                method=method,
+                cv="prefit",
+            )
+            calibrated.fit(X_cal, y_cal)
+        except (ValueError, TypeError) as e:
+            # Fallback: usar 2-fold CV sobre los datos de calibracion
+            logger.info("cv='prefit' no soportado (%s), usando 2-fold CV", e)
+            try:
+                calibrated = CalibratedClassifierCV(
+                    self.model,
+                    method=method,
+                    cv=2,
+                )
+                calibrated.fit(X_cal, y_cal)
+            except Exception as e2:
+                logger.warning("Calibracion fallida completamente: %s. Usando modelo sin calibrar.", e2)
+                return self.model
+
+        self._uncalibrated_model = self.model  # Guardar modelo original
+        self.model = calibrated
+        self._is_calibrated = True
+
+        logger.info("Modelo calibrado exitosamente con '%s'", method)
+        return self.model
+
+    # ------------------------------------------------------------------
+    # Ensemble de modelos
+    # ------------------------------------------------------------------
+
+    def train_ensemble(
+        self,
+        X_train: pd.DataFrame,
+        y_train: pd.Series,
+        X_val: pd.DataFrame,
+        y_val: pd.Series,
+    ):
+        """
+        Entrenar ensemble de XGBoost + LightGBM con soft voting.
+        Combina las probabilidades de ambos modelos para mayor robustez.
+
+        Ventajas:
+        - Reduce overfitting (cada modelo tiene sesgos diferentes)
+        - Probabilidades mas estables
+        - Mejor generalizacion
+
+        Args:
+            X_train: Features de entrenamiento
+            y_train: Target de entrenamiento
+            X_val: Features de validacion
+            y_val: Target de validacion
+
+        Returns:
+            Self (con modelo ensemble cargado)
+        """
+        logger.info("Entrenando ensemble XGBoost + LightGBM...")
+
+        # Entrenar XGBoost
+        xgb_trainer = ModelTrainer(model_type="xgboost")
+        xgb_trainer._is_binary = self._is_binary
+        xgb_trainer._feature_names = self._feature_names
+        xgb_trainer.train(X_train, y_train, X_val, y_val)
+
+        # Entrenar LightGBM
+        lgb_trainer = ModelTrainer(model_type="lightgbm")
+        lgb_trainer._is_binary = self._is_binary
+        lgb_trainer._feature_names = self._feature_names
+        lgb_trainer.train(X_train, y_train, X_val, y_val)
+
+        # Crear ensemble wrapper
+        self.model = EnsembleModel(xgb_trainer.model, lgb_trainer.model)
+        self.model_type = "ensemble"
+        self._xgb_model = xgb_trainer.model
+        self._lgb_model = lgb_trainer.model
+
+        # Metadata
+        self._metadata = {
+            "model_type": "ensemble",
+            "train_date": datetime.now().isoformat(),
+            "train_samples": len(X_train),
+            "val_samples": len(X_val),
+            "n_features": X_train.shape[1],
+            "feature_names": self._feature_names,
+            "components": ["xgboost", "lightgbm"],
+        }
+
+        logger.info("Ensemble entrenado: XGBoost + LightGBM")
+        return self
 
     # ------------------------------------------------------------------
     # Optimizacion de hiperparametros
@@ -651,3 +805,44 @@ class ModelTrainer:
     @property
     def feature_names(self) -> list:
         return self._feature_names.copy()
+
+
+class EnsembleModel:
+    """
+    Wrapper que combina XGBoost + LightGBM con soft voting (promedio de probabilidades).
+    Implementa la interfaz de sklearn (predict, predict_proba, feature_importances_).
+    """
+
+    def __init__(self, model_a, model_b, weights: tuple = (0.5, 0.5)):
+        """
+        Args:
+            model_a: Primer modelo (ej: XGBoost)
+            model_b: Segundo modelo (ej: LightGBM)
+            weights: Pesos para el promedio de probabilidades (default: 50/50)
+        """
+        self.model_a = model_a
+        self.model_b = model_b
+        self.weights = weights
+
+    def predict_proba(self, X) -> np.ndarray:
+        """Promedio ponderado de probabilidades de ambos modelos."""
+        proba_a = self.model_a.predict_proba(X)
+        proba_b = self.model_b.predict_proba(X)
+        return self.weights[0] * proba_a + self.weights[1] * proba_b
+
+    def predict(self, X) -> np.ndarray:
+        """Predecir clase con mayor probabilidad promediada."""
+        proba = self.predict_proba(X)
+        return np.argmax(proba, axis=1)
+
+    @property
+    def feature_importances_(self) -> np.ndarray:
+        """Promedio de feature importances de ambos modelos."""
+        fi_a = self.model_a.feature_importances_
+        fi_b = self.model_b.feature_importances_
+        return (fi_a + fi_b) / 2
+
+    @property
+    def classes_(self):
+        """Clases del modelo."""
+        return self.model_a.classes_

@@ -112,7 +112,7 @@ class TestMLParams:
             "Confidence threshold debe estar entre 0.5 y 0.95"
 
     def test_model_type_valido(self):
-        assert self.s.MODEL_TYPE in ["xgboost", "lightgbm", "random_forest"]
+        assert self.s.MODEL_TYPE in ["xgboost", "lightgbm", "random_forest", "ensemble"]
 
     def test_train_window_mayor_que_validation(self):
         assert self.s.TRAIN_WINDOW_DAYS > self.s.VALIDATION_WINDOW_DAYS

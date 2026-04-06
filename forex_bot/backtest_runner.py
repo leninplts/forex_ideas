@@ -15,6 +15,7 @@ Uso:
   python forex_bot/backtest_runner.py --symbol EURUSDm --model xgboost
   python forex_bot/backtest_runner.py --from-csv data_cache/EURUSDm_H1.csv
   python forex_bot/backtest_runner.py --save-model
+  python forex_bot/backtest_runner.py --walk-forward
 """
 import argparse
 import logging
@@ -47,6 +48,10 @@ def parse_args():
     parser.add_argument("--from-csv", type=str, default=None, help="Cargar datos de archivo CSV en vez de MT5")
     parser.add_argument("--bars", type=int, default=None, help="Numero de barras historicas (default: settings)")
     parser.add_argument("--save-model", action="store_true", help="Guardar modelo si aprueba criterios")
+    parser.add_argument("--walk-forward", action="store_true", help="Usar walk-forward validation (mas realista)")
+    parser.add_argument("--wf-train-days", type=int, default=365, help="Dias de entrenamiento en walk-forward")
+    parser.add_argument("--wf-val-days", type=int, default=60, help="Dias de validacion en walk-forward")
+    parser.add_argument("--wf-step-days", type=int, default=30, help="Dias de paso en walk-forward")
     parser.add_argument("--verbose", action="store_true", help="Logging detallado")
     return parser.parse_args()
 
@@ -125,6 +130,208 @@ def load_htf_data(symbol: str, pp: DataPreprocessor) -> tuple:
     return df_h4, df_d1
 
 
+def run_walk_forward_backtest(
+    symbol: str = "EURUSDm",
+    model_type: str = None,
+    from_csv: str = None,
+    bars: int = None,
+    save_model: bool = False,
+    train_days: int = 365,
+    val_days: int = 60,
+    step_days: int = 30,
+) -> dict:
+    """
+    Backtest con Walk-Forward Validation: entrena/evalua en ventanas sucesivas.
+    Esto es MAS REALISTA que un split simple 70/30 porque:
+    - Simula como operaria el bot en tiempo real
+    - El modelo nunca ve datos futuros
+    - Se re-entrena periodicamente (como en produccion)
+
+    Args:
+        symbol: Par de divisas
+        model_type: Tipo de modelo ML
+        from_csv: Ruta a CSV
+        bars: Numero de barras
+        save_model: Guardar modelo final si aprueba
+        train_days: Dias de entrenamiento por ventana
+        val_days: Dias de validacion/test por ventana
+        step_days: Avance entre ventanas
+
+    Returns:
+        Dict con resultados del backtest walk-forward.
+    """
+    model_type = model_type or settings.MODEL_TYPE
+
+    print(f"\n{'='*60}")
+    print(f"  FOREX BOT - WALK-FORWARD BACKTEST")
+    print(f"  Symbol: {symbol} | Model: {model_type}")
+    print(f"  Train: {train_days}d | Val: {val_days}d | Step: {step_days}d")
+    print(f"{'='*60}\n")
+
+    # 1-4. Cargar y preparar datos (igual que backtest normal)
+    print("[1/6] Cargando datos...")
+    df = load_data(symbol, from_csv, bars)
+
+    print("[2/6] Limpiando y preparando datos...")
+    pp = DataPreprocessor()
+    df = pp.clean_data(df)
+
+    print("[3/6] Calculando indicadores y features...")
+    fe = FeatureEngine()
+    df = fe.add_all_features(df)
+
+    print("[4/6] Agregando features multi-timeframe...")
+    df_h4, df_d1 = load_htf_data(symbol, pp)
+    if df_h4 is not None:
+        df = fe.add_higher_timeframe_features(df, df_h4, suffix="h4")
+    if df_d1 is not None:
+        df = fe.add_higher_timeframe_features(df, df_d1, suffix="d1")
+
+    pip_size = settings.PIP_SIZE.get(symbol, 0.0001)
+    df["target"] = fe.create_target(df, pip_size=pip_size)
+
+    n_features = len(fe.get_feature_columns(df))
+    print(f"       {n_features} features totales")
+
+    # 5. Walk-forward: generar splits y entrenar/evaluar en cada ventana
+    print("[5/6] Walk-Forward Validation...")
+
+    splits = pp.create_walk_forward_splits(df, train_days, val_days, step_days)
+    if not splits:
+        print("ERROR: No se generaron splits. Datos insuficientes.")
+        return {"error": "No splits"}
+
+    print(f"       {len(splits)} ventanas de walk-forward")
+
+    # Acumular senales de todas las ventanas de validacion
+    all_signals = pd.Series(0, index=df.index, dtype=int)
+    all_sl_pips = pd.Series(np.nan, index=df.index, dtype=float)
+    all_tp_pips = pd.Series(np.nan, index=df.index, dtype=float)
+
+    wf_metrics = []
+    all_train_accs = []
+    all_test_accs = []
+
+    for i, (train_df, val_df) in enumerate(splits):
+        # Para ensemble, usamos el trainer base para prepare_features
+        # y luego entrenamos con train_ensemble si es ensemble
+        base_type = "xgboost" if model_type == "ensemble" else model_type
+        trainer = ModelTrainer(model_type=base_type)
+
+        try:
+            X_train_full, y_train_full = trainer.prepare_features(train_df)
+            X_val, y_val = trainer.prepare_features(val_df)
+        except Exception as e:
+            logger.warning("Skip split %d: %s", i + 1, e)
+            continue
+
+        if len(X_train_full) < 100 or len(X_val) < 20:
+            continue
+
+        # Split interno: train / early_stop / calibracion
+        # 75% train, 10% early stopping, 15% calibracion
+        es_split = int(len(X_train_full) * 0.75)
+        cal_split = int(len(X_train_full) * 0.85)
+        X_train = X_train_full.iloc[:es_split]
+        y_train = y_train_full.iloc[:es_split]
+        X_es = X_train_full.iloc[es_split:cal_split]
+        y_es = y_train_full.iloc[es_split:cal_split]
+        X_cal = X_train_full.iloc[cal_split:]
+        y_cal = y_train_full.iloc[cal_split:]
+
+        # Entrenar modelo (ensemble o individual)
+        if model_type == "ensemble":
+            trainer.train_ensemble(X_train, y_train, X_es, y_es)
+        else:
+            trainer.train(X_train, y_train, X_es, y_es)
+
+        # Calibrar probabilidades si esta habilitado
+        if settings.CALIBRATE_PROBABILITIES and len(X_cal) >= 30:
+            try:
+                trainer.calibrate(X_cal, y_cal, method="isotonic")
+            except Exception as e:
+                logger.warning("Calibracion fallida en split %d: %s", i + 1, e)
+
+        # Evaluar
+        train_eval = trainer.evaluate(X_train, y_train)
+        test_eval = trainer.evaluate(X_val, y_val)
+        all_train_accs.append(train_eval["accuracy"])
+        all_test_accs.append(test_eval["accuracy"])
+
+        # Generar senales para esta ventana de validacion
+        y_proba = trainer.model.predict_proba(X_val)
+        threshold = settings.CONFIDENCE_THRESHOLD
+        is_binary = y_proba.shape[1] == 2
+
+        for j, idx in enumerate(X_val.index):
+            if idx not in df.index:
+                continue
+            pos = df.index.get_loc(idx)
+
+            if is_binary:
+                prob_up = y_proba[j, 1]
+                if prob_up > threshold:
+                    all_signals.iloc[pos] = 1
+                elif prob_up < (1 - threshold):
+                    all_signals.iloc[pos] = -1
+            else:
+                pred = int(np.argmax(y_proba[j]))
+                conf = y_proba[j, pred]
+                if conf > threshold:
+                    signal_map = {0: -1, 1: 0, 2: 1}
+                    all_signals.iloc[pos] = signal_map.get(pred, 0)
+
+        wf_metrics.append({
+            "split": i + 1,
+            "train_acc": train_eval["accuracy"],
+            "test_acc": test_eval["accuracy"],
+            "test_auc": test_eval["auc"],
+            "n_train": len(X_train_full),
+            "n_test": len(X_val),
+        })
+
+        print(f"  Split {i+1}/{len(splits)}: Train acc={train_eval['accuracy']:.2%} | "
+              f"Test acc={test_eval['accuracy']:.2%} | AUC={test_eval['auc']:.4f}")
+
+    # Resumen de walk-forward
+    avg_train_acc = np.mean(all_train_accs) if all_train_accs else 0
+    avg_test_acc = np.mean(all_test_accs) if all_test_accs else 0
+    std_test_acc = np.std(all_test_accs) if all_test_accs else 0
+
+    print(f"\n  Walk-Forward Resumen:")
+    print(f"    Avg Train Accuracy: {avg_train_acc:.2%}")
+    print(f"    Avg Test Accuracy:  {avg_test_acc:.2%} (+/- {std_test_acc:.2%})")
+    print(f"    Overfitting gap:    {(avg_train_acc - avg_test_acc)*100:.1f}%")
+
+    n_buy = (all_signals == 1).sum()
+    n_sell = (all_signals == -1).sum()
+    print(f"    Senales generadas: BUY={n_buy} | SELL={n_sell}")
+
+    # 6. Ejecutar backtest con las senales acumuladas
+    print("\n[6/6] Ejecutando backtest con senales walk-forward...")
+    bt = Backtester(initial_balance=settings.BACKTEST_INITIAL_BALANCE)
+    result = bt.run(df, all_signals, symbol=symbol)
+    metrics = result["metrics"]
+
+    PerformanceMetrics.print_report(metrics)
+    passed = evaluate_criteria(metrics)
+
+    # Guardar ultimo modelo si aprueba
+    if save_model and passed:
+        model_path = trainer.save_model()
+        print(f"\nModelo (ultima ventana) guardado en: {model_path}")
+
+    return {
+        "metrics": metrics,
+        "trades": result["trades"],
+        "equity_curve": result["equity_curve"],
+        "walk_forward_metrics": wf_metrics,
+        "avg_train_accuracy": avg_train_acc,
+        "avg_test_accuracy": avg_test_acc,
+        "passed_criteria": passed,
+    }
+
+
 def run_backtest(
     symbol: str = "EURUSDm",
     model_type: str = None,
@@ -186,7 +393,8 @@ def run_backtest(
 
     # 5. Entrenar modelo
     print("[5/7] Entrenando modelo...")
-    trainer = ModelTrainer(model_type=model_type)
+    base_type = "xgboost" if model_type == "ensemble" else model_type
+    trainer = ModelTrainer(model_type=base_type)
     X, y = trainer.prepare_features(df)
 
     # Split: 70% train+val, 30% test (para backtest)
@@ -196,14 +404,27 @@ def run_backtest(
     X_test = X.iloc[split_idx:]
     y_test = y.iloc[split_idx:]
 
-    # Dentro del train, split en train/val para early stopping
-    val_split = int(len(X_train_full) * 0.85)
-    X_train = X_train_full.iloc[:val_split]
-    y_train = y_train_full.iloc[:val_split]
-    X_val = X_train_full.iloc[val_split:]
-    y_val = y_train_full.iloc[val_split:]
+    # Dentro del train: 75% train, 10% early stop, 15% calibracion
+    es_split = int(len(X_train_full) * 0.75)
+    cal_split = int(len(X_train_full) * 0.85)
+    X_train = X_train_full.iloc[:es_split]
+    y_train = y_train_full.iloc[:es_split]
+    X_val = X_train_full.iloc[es_split:cal_split]
+    y_val = y_train_full.iloc[es_split:cal_split]
+    X_cal = X_train_full.iloc[cal_split:]
+    y_cal = y_train_full.iloc[cal_split:]
 
-    trainer.train(X_train, y_train, X_val, y_val)
+    if model_type == "ensemble":
+        trainer.train_ensemble(X_train, y_train, X_val, y_val)
+    else:
+        trainer.train(X_train, y_train, X_val, y_val)
+
+    # Calibrar probabilidades si esta habilitado
+    if settings.CALIBRATE_PROBABILITIES and len(X_cal) >= 30:
+        try:
+            trainer.calibrate(X_cal, y_cal, method="isotonic")
+        except Exception as e:
+            logger.warning("Calibracion fallida: %s", e)
 
     # Evaluar en test set
     eval_metrics = trainer.evaluate(X_test, y_test)
@@ -362,13 +583,25 @@ def main():
     args = parse_args()
     setup_logging(args.verbose)
 
-    run_backtest(
-        symbol=args.symbol,
-        model_type=args.model,
-        from_csv=args.from_csv,
-        bars=args.bars,
-        save_model=args.save_model,
-    )
+    if args.walk_forward:
+        run_walk_forward_backtest(
+            symbol=args.symbol,
+            model_type=args.model,
+            from_csv=args.from_csv,
+            bars=args.bars,
+            save_model=args.save_model,
+            train_days=args.wf_train_days,
+            val_days=args.wf_val_days,
+            step_days=args.wf_step_days,
+        )
+    else:
+        run_backtest(
+            symbol=args.symbol,
+            model_type=args.model,
+            from_csv=args.from_csv,
+            bars=args.bars,
+            save_model=args.save_model,
+        )
 
 
 if __name__ == "__main__":
