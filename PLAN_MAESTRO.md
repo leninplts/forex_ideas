@@ -599,7 +599,7 @@ El bot operara a traves de MetaTrader 5 con gestion de riesgo estricta.
 
 ### Tareas:
 
-- [ ] 8.1 - Crear main.py (Bot principal)
+- [x] 8.1 - Crear main.py (Bot principal) (COMPLETADO)
   Flujo:
   ```
   1. Cargar configuracion
@@ -643,7 +643,7 @@ El bot operara a traves de MetaTrader 5 con gestion de riesgo estricta.
      - No cerrar posiciones automaticamente (dejar SL/TP)
   ```
 
-- [ ] 8.2 - Crear backtest_runner.py
+- [x] 8.2 - Crear backtest_runner.py (COMPLETADO - 23/23 tests passed)
   Flujo:
   ```
   1. Cargar configuracion
