@@ -1,0 +1,44 @@
+# =============================================================================
+# Bot de Forex con IA - Dependencias
+# =============================================================================
+# Generado con pip freeze - todas las versiones son las ultimas a fecha 2026-04-06
+# Instalar: pip install -r requirements.txt
+# Nota: MetaTrader5 solo funciona en Windows
+# =============================================================================
+
+# --- Conexion con MetaTrader 5 ---
+metatrader5==5.0.5735
+
+# --- Manipulacion de datos ---
+pandas==3.0.2
+numpy==2.4.4
+
+# --- Indicadores tecnicos ---
+pandas-ta==0.4.71b0
+numba==0.65.0
+llvmlite==0.47.0
+
+# --- Machine Learning ---
+scikit-learn==1.8.0
+xgboost==3.2.0
+lightgbm==4.6.0
+scipy==1.17.1
+
+# --- Serializacion de modelos ---
+joblib==1.5.3
+
+# --- Visualizacion ---
+matplotlib==3.10.8
+plotly==6.6.0
+pillow==12.2.0
+
+# --- Notificaciones (opcional) ---
+python-telegram-bot==22.7
+
+# --- Utilidades ---
+python-dateutil==2.9.0.post0
+pytz==2026.1.post1
+tqdm==4.67.3
+
+# --- Testing ---
+pytest==9.0.2

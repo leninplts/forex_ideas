@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Credenciales (NUNCA subir)
+forex_bot/config/mt5_config.py
+
+# Modelos entrenados (pueden ser pesados)
+forex_bot/models/saved/*.pkl
+forex_bot/models/saved/*.joblib
+
+# Logs
+forex_bot/logs/
+*.log
+
+# Datos descargados
+*.csv
+data_cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
