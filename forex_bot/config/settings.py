@@ -155,16 +155,17 @@ SELECTED_FEATURES = [
 # XGBoost hyperparameters (API verificada contra XGBoost 3.2.0)
 # Nota: early_stopping_rounds y eval_metric van en el constructor de XGBClassifier
 # Nota: objective "binary:logistic" para target binario, "multi:softprob" para ternario
+# OPTIMIZADO: regularizacion agresiva para reducir overfitting (gap 39% -> 13%)
 XGBOOST_PARAMS = {
-    "n_estimators": 500,            # Optimo: early stopping para en ~328
-    "max_depth": 4,
-    "learning_rate": 0.05,
-    "subsample": 0.8,
-    "colsample_bytree": 0.7,
-    "min_child_weight": 10,
-    "gamma": 0.2,
-    "reg_alpha": 0.5,
-    "reg_lambda": 2.0,
+    "n_estimators": 300,            # 500 -> 300 (early stopping frena antes de todas formas)
+    "max_depth": 3,                 # 4 -> 3 (arboles menos profundos = menos memorizacion)
+    "learning_rate": 0.03,          # 0.05 -> 0.03 (aprender mas lento, generalizar mejor)
+    "subsample": 0.7,              # 0.8 -> 0.7 (cada arbol ve menos datos = mas diversidad)
+    "colsample_bytree": 0.5,       # 0.7 -> 0.5 (cada arbol ve menos features = menos correlacion)
+    "min_child_weight": 20,         # 10 -> 20 (hojas necesitan mas evidencia)
+    "gamma": 0.5,                  # 0.2 -> 0.5 (costo mas alto para crear splits)
+    "reg_alpha": 1.0,              # 0.5 -> 1.0 (mas regularizacion L1 = sparsity)
+    "reg_lambda": 5.0,             # 2.0 -> 5.0 (mas regularizacion L2 = pesos mas pequenos)
     "objective": "binary:logistic",
     "eval_metric": "logloss",
     "early_stopping_rounds": 30,
@@ -176,14 +177,16 @@ XGBOOST_PARAMS = {
 # Nota: early stopping se maneja via callbacks en fit(): lgb.early_stopping(stopping_rounds=50)
 # Nota: eval_metric se pasa en fit(), no aqui
 # Nota: num_class NO se pasa, LGBMClassifier lo infiere automaticamente
+# OPTIMIZADO: regularizacion agresiva para reducir overfitting
 LIGHTGBM_PARAMS = {
-    "n_estimators": 300,
-    "max_depth": 4,
-    "learning_rate": 0.05,
-    "subsample": 0.8,
-    "colsample_bytree": 0.7,
-    "min_child_weight": 10,
-    "num_leaves": 31,
+    "n_estimators": 200,            # 300 -> 200
+    "max_depth": 3,                 # 4 -> 3
+    "learning_rate": 0.03,          # 0.05 -> 0.03
+    "subsample": 0.7,              # 0.8 -> 0.7
+    "colsample_bytree": 0.5,       # 0.7 -> 0.5
+    "min_child_weight": 20,         # 10 -> 20
+    "num_leaves": 15,              # 31 -> 15 (mucho menos hojas = modelo mas simple)
+    "min_data_in_leaf": 50,        # Nuevo: minimo 50 muestras por hoja
     "objective": "binary",
     "metric": "binary_logloss",
     "random_state": 42,

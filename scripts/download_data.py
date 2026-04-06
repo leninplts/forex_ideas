@@ -35,11 +35,11 @@ def main():
     print(f"Conectado: {info['login']} @ {info['server']} | Balance: ${info['balance']:.2f}")
     print()
 
-    # Barras a descargar por timeframe (~2 anios)
+    # Barras a descargar por timeframe (~5 anios)
     bars_per_tf = {
-        "H1": 12000,    # ~2 anios de H1 (sobramos para tener margen)
-        "H4": 4000,     # ~2 anios de H4
-        "D1": 800,      # ~2 anios de D1 + extra para lookback SMA200
+        "H1": 30000,    # ~5 anios de H1 (24 * 260 dias trading * 5 ~ 31200)
+        "H4": 8000,     # ~5 anios de H4
+        "D1": 1500,     # ~5 anios de D1 + extra para lookback SMA200
     }
 
     timeframes = [
