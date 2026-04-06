@@ -475,7 +475,7 @@ El bot operara a traves de MetaTrader 5 con gestion de riesgo estricta.
 
 ### Tareas:
 
-- [ ] 6.1 - Crear backtesting/backtester.py
+- [x] 6.1 - Crear backtesting/backtester.py (COMPLETADO)
   Clase: Backtester
   Metodos:
   - __init__(self, initial_balance, commission, spread):
@@ -504,7 +504,7 @@ El bot operara a traves de MetaTrader 5 con gestion de riesgo estricta.
     - Llamar a metrics.py para calcular todas las metricas
     - Retornar reporte completo
 
-- [ ] 6.2 - Crear backtesting/metrics.py
+- [x] 6.2 - Crear backtesting/metrics.py (COMPLETADO - 28/28 tests passed)
   Clase: PerformanceMetrics
   Metodos estaticos:
   - calculate_all(trades, equity_curve) -> dict:

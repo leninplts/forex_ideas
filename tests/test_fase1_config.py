@@ -39,7 +39,7 @@ class TestTradingParams:
     def test_symbols_son_strings(self):
         for sym in self.s.SYMBOLS:
             assert isinstance(sym, str)
-            assert len(sym) == 6, f"Simbolo {sym} debe tener 6 caracteres (ej: EURUSD)"
+            assert 6 <= len(sym) <= 10, f"Simbolo {sym} debe tener 6-10 caracteres (ej: EURUSD, EURUSDm)"
 
     def test_timeframes_validos(self):
         assert self.s.TIMEFRAME_PRIMARY in self.s.TIMEFRAME_MAP

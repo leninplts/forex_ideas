@@ -87,14 +87,23 @@ TRAILING_STOP_ATR_MULT = 1.0     # Trailing stop a 1x ATR
 
 # Pip values por par (para 0.01 lot / micro-lote)
 # Estos son valores aproximados, el bot calcula el real en runtime
+# Usa nombre con sufijo del broker para busqueda directa
 PIP_VALUES = {
-    "EURUSD": 0.10,    # $0.10 por pip con 0.01 lot
-    "GBPUSD": 0.10,    # $0.10 por pip con 0.01 lot
-    "USDJPY": 0.07,    # ~$0.07 por pip con 0.01 lot (variable)
+    "EURUSDm": 0.10,   # $0.10 por pip con 0.01 lot
+    "GBPUSDm": 0.10,   # $0.10 por pip con 0.01 lot
+    "USDJPYm": 0.07,   # ~$0.07 por pip con 0.01 lot (variable)
+    # Alias sin sufijo para backtesting con datos genericos
+    "EURUSD": 0.10,
+    "GBPUSD": 0.10,
+    "USDJPY": 0.07,
 }
 
 # Pip size por par (cuanto vale 1 pip en precio)
 PIP_SIZE = {
+    "EURUSDm": 0.0001,
+    "GBPUSDm": 0.0001,
+    "USDJPYm": 0.01,
+    # Alias sin sufijo
     "EURUSD": 0.0001,
     "GBPUSD": 0.0001,
     "USDJPY": 0.01,
