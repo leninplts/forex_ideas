@@ -554,7 +554,7 @@ El bot operara a traves de MetaTrader 5 con gestion de riesgo estricta.
 
 ### Tareas:
 
-- [ ] 7.1 - Crear utils/logger.py
+- [x] 7.1 - Crear utils/logger.py (COMPLETADO)
   Clase: TradingLogger
   Metodos:
   - __init__(self, log_dir="logs"):
@@ -572,7 +572,7 @@ El bot operara a traves de MetaTrader 5 con gestion de riesgo estricta.
   - get_trade_history() -> pd.DataFrame:
     - Leer historial de trades del CSV
 
-- [ ] 7.2 - Crear utils/notifications.py
+- [x] 7.2 - Crear utils/notifications.py (COMPLETADO - 26/26 tests passed)
   Clase: TelegramNotifier
   Metodos:
   - __init__(self, bot_token, chat_id):
