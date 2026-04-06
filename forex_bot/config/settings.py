@@ -107,7 +107,10 @@ VALIDATION_WINDOW_DAYS = 60      # Ventana de validacion en dias
 # Features
 FEATURE_LOOKBACK = 20            # Periodos de lookback para features
 
-# XGBoost hyperparameters
+# XGBoost hyperparameters (API verificada contra XGBoost 3.2.0)
+# Nota: early_stopping_rounds y eval_metric van en el constructor de XGBClassifier
+# Nota: num_class NO se pasa, XGBClassifier lo infiere automaticamente
+# Nota: objective "multi:softprob" da probabilidades por clase
 XGBOOST_PARAMS = {
     "n_estimators": 500,
     "max_depth": 6,
@@ -119,14 +122,16 @@ XGBOOST_PARAMS = {
     "reg_alpha": 0.1,
     "reg_lambda": 1.0,
     "objective": "multi:softprob",
-    "num_class": 3,
     "eval_metric": "mlogloss",
     "early_stopping_rounds": 50,
     "random_state": 42,
     "n_jobs": -1,
 }
 
-# LightGBM hyperparameters
+# LightGBM hyperparameters (API verificada contra LightGBM 4.6.0)
+# Nota: early stopping se maneja via callbacks en fit(): lgb.early_stopping(stopping_rounds=50)
+# Nota: eval_metric se pasa en fit(), no aqui
+# Nota: num_class NO se pasa, LGBMClassifier lo infiere automaticamente
 LIGHTGBM_PARAMS = {
     "n_estimators": 500,
     "max_depth": 6,
@@ -134,7 +139,7 @@ LIGHTGBM_PARAMS = {
     "subsample": 0.8,
     "colsample_bytree": 0.8,
     "min_child_weight": 5,
-    "num_class": 3,
+    "num_leaves": 31,
     "objective": "multiclass",
     "metric": "multi_logloss",
     "random_state": 42,

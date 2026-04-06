@@ -252,7 +252,7 @@ El bot operara a traves de MetaTrader 5 con gestion de riesgo estricta.
 
 ### Tareas:
 
-- [ ] 3.1 - Crear models/trainer.py
+- [x] 3.1 - Crear models/trainer.py (COMPLETADO - API verificada XGBoost 3.2 + LightGBM 4.6)
   Clase: ModelTrainer
   Metodos:
   - __init__(self, model_type="xgboost"):
@@ -303,7 +303,7 @@ El bot operara a traves de MetaTrader 5 con gestion de riesgo estricta.
     - Retornar metricas promedio y por ventana
     - ESTO ES CRITICO para evitar overfitting
 
-- [ ] 3.2 - Crear models/predictor.py
+- [x] 3.2 - Crear models/predictor.py (COMPLETADO - 33/33 tests passed)
   Clase: ModelPredictor
   Metodos:
   - __init__(self, model_path):
@@ -329,7 +329,7 @@ El bot operara a traves de MetaTrader 5 con gestion de riesgo estricta.
 
 ### Tareas:
 
-- [ ] 4.1 - Crear strategy/signal_generator.py
+- [x] 4.1 - Crear strategy/signal_generator.py (COMPLETADO)
   Clase: SignalGenerator
   Metodos:
   - __init__(self, predictor, feature_engine):
@@ -361,7 +361,7 @@ El bot operara a traves de MetaTrader 5 con gestion de riesgo estricta.
     - Ajustar a niveles de soporte/resistencia si estan cerca
     - Verificar que SL no sea demasiado tight (minimo X pips)
 
-- [ ] 4.2 - Crear strategy/risk_manager.py
+- [x] 4.2 - Crear strategy/risk_manager.py (COMPLETADO - 40/40 tests passed)
   Clase: RiskManager
   Metodos:
   - __init__(self, initial_balance):
