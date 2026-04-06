@@ -84,6 +84,7 @@ SL_ATR_MULTIPLIER = 1.5          # SL = ATR * multiplier
 TP_ATR_MULTIPLIER = 2.25         # TP = ATR * multiplier (SL * MIN_RISK_REWARD)
 TRAILING_STOP_ENABLED = True
 TRAILING_STOP_ATR_MULT = 1.0     # Trailing stop a 1x ATR
+TRAILING_STOP_CHECK_SECONDS = 300  # Revisar trailing stop cada 5 minutos (300 seg)
 
 # Pip values por par (para 0.01 lot / micro-lote)
 # Estos son valores aproximados, el bot calcula el real en runtime
@@ -215,7 +216,7 @@ RECONNECT_DELAY_SECONDS = 10
 # NOTIFICATIONS
 # =============================================================================
 
-TELEGRAM_ENABLED = False
+TELEGRAM_ENABLED = True
 # Token y chat_id se configuran en mt5_config.py (no va al repo)
 
 # =============================================================================

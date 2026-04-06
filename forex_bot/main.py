@@ -170,19 +170,31 @@ class ForexBot:
     # ------------------------------------------------------------------
 
     def run(self):
-        """Loop principal del bot."""
+        """
+        Loop principal del bot.
+        Dos ciclos independientes:
+          - Ciclo H1 (cada hora en punto): evaluar senales, abrir trades
+          - Ciclo trailing (cada 5 min): actualizar trailing stops de posiciones abiertas
+        """
         global _shutdown_requested
 
         self.running = True
         logger.info("Bot iniciado en modo %s", self.mode.upper())
 
         last_processed_hour = -1
+        last_trailing_check = 0  # timestamp del ultimo check de trailing
+
+        # Intervalo de check del trailing stop (en segundos)
+        trailing_interval = settings.TRAILING_STOP_CHECK_SECONDS  # 300 = 5 min
 
         while self.running and not _shutdown_requested:
             try:
                 now = datetime.now()
+                now_ts = time.time()
 
-                # Esperar al cierre de vela H1 (minuto 0 de cada hora)
+                # =============================================
+                # CICLO H1: senales de entrada (cada hora)
+                # =============================================
                 if now.minute == 0 and now.hour != last_processed_hour:
                     last_processed_hour = now.hour
                     logger.info("--- Ciclo H1: %s ---", now.strftime("%Y-%m-%d %H:%M"))
@@ -191,15 +203,31 @@ class ForexBot:
                     for symbol in settings.SYMBOLS:
                         self._process_symbol(symbol)
 
-                    # Gestionar posiciones abiertas
+                    # Gestionar posiciones (incluye trailing)
                     self._manage_positions()
+                    last_trailing_check = now_ts
 
                     # Resumen diario (al cierre de cada dia)
                     if now.hour == 0:
                         self._daily_summary()
 
-                # Dormir para no consumir CPU
-                time.sleep(settings.CHECK_INTERVAL_SECONDS)
+                # =============================================
+                # CICLO TRAILING: cada 5 minutos
+                # =============================================
+                elif (now_ts - last_trailing_check) >= trailing_interval:
+                    # Solo revisar trailing si hay posiciones abiertas
+                    if settings.TRAILING_STOP_ENABLED:
+                        positions = self.executor.get_open_positions()
+                        if positions:
+                            logger.debug(
+                                "--- Trailing check: %s (%d posiciones) ---",
+                                now.strftime("%H:%M"), len(positions),
+                            )
+                            self._manage_positions()
+                    last_trailing_check = now_ts
+
+                # Dormir para no consumir CPU (revisar cada 10 segundos)
+                time.sleep(min(settings.CHECK_INTERVAL_SECONDS, 10))
 
             except KeyboardInterrupt:
                 break

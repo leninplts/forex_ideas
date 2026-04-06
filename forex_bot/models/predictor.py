@@ -94,7 +94,10 @@ class ModelPredictor:
             True si se cargo un modelo, False si no hay modelos.
         """
         saved_dir = settings.MODELS_DIR
-        model_files = list(saved_dir.glob("*.json")) + list(saved_dir.glob("*.pkl"))
+        model_files = [
+            f for f in list(saved_dir.glob("*.json")) + list(saved_dir.glob("*.pkl"))
+            if not f.name.endswith(".meta.json")
+        ]
 
         if not model_files:
             logger.warning("No hay modelos guardados en %s", saved_dir)
