@@ -28,16 +28,22 @@ class Backtester:
         initial_balance: float = None,
         commission_per_lot: float = None,
         spread_pips: float = None,
+        apply_session_filter: bool = False,
+        apply_trailing_stop: bool = False,
     ):
         """
         Args:
             initial_balance: Balance inicial (default: settings)
             commission_per_lot: Comision por lote estandar (default: settings)
             spread_pips: Spread simulado en pips (default: settings)
+            apply_session_filter: Aplicar filtro de sesion de mercado (default: True)
+            apply_trailing_stop: Simular trailing stop (default: True)
         """
         self.initial_balance = initial_balance or settings.BACKTEST_INITIAL_BALANCE
         self.commission_per_lot = commission_per_lot or settings.BACKTEST_COMMISSION_PER_LOT
         self.spread_pips = spread_pips or settings.BACKTEST_SPREAD_PIPS
+        self.apply_session_filter = apply_session_filter
+        self.apply_trailing_stop = apply_trailing_stop
 
         # Estado de la simulacion
         self._balance = self.initial_balance
@@ -93,22 +99,28 @@ class Backtester:
             row = df.iloc[i]
             timestamp = df.index[i]
 
-            # 1. Verificar SL/TP de posiciones abiertas usando high/low de ESTA vela
+            # 1. Actualizar trailing stop si esta habilitado
+            if self.apply_trailing_stop and settings.TRAILING_STOP_ENABLED:
+                self._update_trailing_stops(row, pip_size)
+
+            # 2. Verificar SL/TP de posiciones abiertas usando high/low de ESTA vela
             self._check_sl_tp(row, pip_size, pip_value, timestamp)
 
-            # 2. Procesar senal de ESTA vela (al cierre)
+            # 3. Procesar senal de ESTA vela (al cierre)
             if i < len(signals):
                 signal = signals.iloc[i]
                 sl_pips = sl_pips_series.iloc[i] if i < len(sl_pips_series) else 0
                 tp_pips = tp_pips_series.iloc[i] if i < len(tp_pips_series) else 0
 
                 if signal in (1, -1) and sl_pips > 0 and tp_pips > 0:
-                    self._process_signal(
-                        signal, row, sl_pips, tp_pips,
-                        pip_size, pip_value, symbol, timestamp,
-                    )
+                    # Aplicar filtro de sesion si esta habilitado
+                    if not self.apply_session_filter or self._passes_session_filter(timestamp):
+                        self._process_signal(
+                            signal, row, sl_pips, tp_pips,
+                            pip_size, pip_value, symbol, timestamp,
+                        )
 
-            # 3. Registrar equity (balance + profit no realizado)
+            # 4. Registrar equity (balance + profit no realizado)
             unrealized = sum(
                 self._calc_unrealized_pnl(pos, row["close"], pip_size, pip_value)
                 for pos in self._open_positions
@@ -213,6 +225,83 @@ class Backtester:
     # ------------------------------------------------------------------
     # Check SL/TP
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _passes_session_filter(timestamp) -> bool:
+        """
+        Verificar si el timestamp cae dentro de las sesiones permitidas.
+        Si el filtro no esta habilitado, siempre retorna True.
+        """
+        if not hasattr(settings, "SESSION_FILTER_ENABLED") or not settings.SESSION_FILTER_ENABLED:
+            return True
+
+        hour = timestamp.hour
+        day_of_week = timestamp.weekday()  # 0=Monday ... 6=Sunday
+
+        # Evitar viernes tarde y domingo
+        day_name = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"][day_of_week]
+        avoid_hours = settings.AVOID_TRADING_HOURS.get(day_name, [])
+        if hour in avoid_hours:
+            return False
+
+        # Verificar sesion activa
+        allowed = getattr(settings, "ALLOWED_SESSIONS", [])
+        if not allowed:
+            return True
+
+        for session_name in allowed:
+            session = settings.SESSIONS.get(session_name)
+            if session:
+                open_h = session["open"]
+                close_h = session["close"]
+                if open_h < close_h:
+                    if open_h <= hour < close_h:
+                        return True
+                else:  # Cruza medianoche
+                    if hour >= open_h or hour < close_h:
+                        return True
+
+        return False
+
+    def _update_trailing_stops(self, row, pip_size: float):
+        """
+        Actualizar trailing stops de posiciones abiertas.
+        El trailing stop solo se mueve a favor (nunca se aleja del precio).
+
+        Para BUY: si el precio sube, subir el SL para proteger ganancias.
+        Para SELL: si el precio baja, bajar el SL para proteger ganancias.
+
+        Solo activa el trailing DESPUES de que la posicion tiene al menos
+        50% del TP alcanzado (no mover SL prematuramente).
+        Usa ATR * TRAILING_STOP_ATR_MULT como distancia del trailing.
+        """
+        for pos in self._open_positions:
+            # Distancia del trailing basada en SL original (ATR * trailing_mult)
+            trail_distance = pos.get("sl_pips", 20) * pip_size * (
+                settings.TRAILING_STOP_ATR_MULT / settings.SL_ATR_MULTIPLIER
+            )
+
+            if pos["type"] == 1:  # BUY
+                # Solo activar trailing si el precio ha avanzado al menos 50% hacia el TP
+                progress = (row["close"] - pos["entry_price"]) / (pos["tp"] - pos["entry_price"]) if pos["tp"] != pos["entry_price"] else 0
+                if progress < 0.5:
+                    continue
+
+                # Nuevo SL = close de esta vela - trail_distance
+                new_sl = row["close"] - trail_distance
+                # Solo mover si es mas alto que el SL actual (a favor)
+                # y no pasar mas alla del entry (minimo breakeven)
+                if new_sl > pos["sl"] and new_sl > pos["entry_price"]:
+                    pos["sl"] = new_sl
+
+            elif pos["type"] == -1:  # SELL
+                progress = (pos["entry_price"] - row["close"]) / (pos["entry_price"] - pos["tp"]) if pos["tp"] != pos["entry_price"] else 0
+                if progress < 0.5:
+                    continue
+
+                new_sl = row["close"] + trail_distance
+                if new_sl < pos["sl"] and new_sl < pos["entry_price"]:
+                    pos["sl"] = new_sl
 
     def _check_sl_tp(self, row, pip_size: float, pip_value: float, timestamp):
         """

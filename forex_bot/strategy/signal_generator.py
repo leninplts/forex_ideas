@@ -210,6 +210,27 @@ class SignalGenerator:
         if hour in avoid_hours:
             reasons.append(f"Horario de baja liquidez ({day_name} {hour}:00 UTC)")
 
+        # --- Filtro de sesion: solo operar en sesiones con buena liquidez ---
+        if hasattr(settings, "SESSION_FILTER_ENABLED") and settings.SESSION_FILTER_ENABLED:
+            in_active_session = False
+            for session_name in settings.ALLOWED_SESSIONS:
+                session = settings.SESSIONS.get(session_name)
+                if session:
+                    open_h = session["open"]
+                    close_h = session["close"]
+                    if open_h < close_h:
+                        in_active_session = in_active_session or (open_h <= hour < close_h)
+                    else:  # Cruza medianoche (ej: sydney 22-7)
+                        in_active_session = in_active_session or (hour >= open_h or hour < close_h)
+            if not in_active_session:
+                reasons.append(f"Fuera de sesiones activas (hora={hour}:00 UTC)")
+
+        # --- Filtro de regimen: solo operar en mercado trending ---
+        if hasattr(settings, "REGIME_FILTER_ENABLED") and settings.REGIME_FILTER_ENABLED:
+            regime = self._detect_regime(df_h1)
+            if regime == "ranging" and signal in ("BUY", "SELL"):
+                reasons.append(f"Mercado en rango (regimen={regime}), evitando trend-following")
+
         # --- Resultado ---
         if reasons:
             reason_text = " | ".join(reasons)
@@ -217,6 +238,46 @@ class SignalGenerator:
             return {"passed": False, "reason": reason_text}
 
         return {"passed": True, "reason": "OK"}
+
+    # ------------------------------------------------------------------
+    # Deteccion de regimen de mercado
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _detect_regime(df: pd.DataFrame) -> str:
+        """
+        Clasificar el regimen actual del mercado.
+
+        Regimenes:
+          - "trending": ADX > 25 y precio alineado con MAs -> trend following funciona
+          - "volatile": ATR ratio > 2.0 -> demasiada volatilidad, riesgo alto
+          - "ranging": ADX < 20 y BB squeeze -> mercado lateral, evitar
+          - "normal": ninguno de los anteriores -> operar con cautela
+
+        Args:
+            df: DataFrame H1 con features calculadas
+
+        Returns:
+            String con el regimen: "trending", "volatile", "ranging", "normal"
+        """
+        # ADX
+        adx_col = f"adx_{settings.ADX_PERIOD}"
+        adx = df[adx_col].iloc[-1] if adx_col in df.columns else 20
+
+        # ATR ratio
+        atr_ratio = df["atr_ratio"].iloc[-1] if "atr_ratio" in df.columns else 1.0
+
+        # BB squeeze (ancho de bandas)
+        bb_squeeze = df["bb_squeeze"].iloc[-1] if "bb_squeeze" in df.columns else 5.0
+
+        # Clasificacion
+        if not np.isnan(atr_ratio) and atr_ratio > 2.5:
+            return "volatile"
+        if not np.isnan(adx) and adx > 25:
+            return "trending"
+        if not np.isnan(adx) and adx < 20 and not np.isnan(bb_squeeze) and bb_squeeze < 2.0:
+            return "ranging"
+        return "normal"
 
     # ------------------------------------------------------------------
     # SL / TP

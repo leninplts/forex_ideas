@@ -309,7 +309,11 @@ def run_walk_forward_backtest(
 
     # 6. Ejecutar backtest con las senales acumuladas
     print("\n[6/6] Ejecutando backtest con senales walk-forward...")
-    bt = Backtester(initial_balance=settings.BACKTEST_INITIAL_BALANCE)
+    bt = Backtester(
+        initial_balance=settings.BACKTEST_INITIAL_BALANCE,
+        apply_session_filter=True,
+        apply_trailing_stop=False,  # Trailing stop solo en live, no en backtest H1
+    )
     result = bt.run(df, all_signals, symbol=symbol)
     metrics = result["metrics"]
 
@@ -480,7 +484,11 @@ def run_backtest(
     print(f"       Senales: BUY={n_buy} | SELL={n_sell} | HOLD={n_hold}")
 
     # Ejecutar backtest
-    bt = Backtester(initial_balance=settings.BACKTEST_INITIAL_BALANCE)
+    bt = Backtester(
+        initial_balance=settings.BACKTEST_INITIAL_BALANCE,
+        apply_session_filter=True,
+        apply_trailing_stop=False,  # Trailing stop solo en live, no en backtest H1
+    )
     result = bt.run(df, signals, symbol=symbol)
     metrics = result["metrics"]
 

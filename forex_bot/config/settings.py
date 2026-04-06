@@ -286,3 +286,10 @@ SESSIONS = {
     "london":  {"open": 8,  "close": 17},
     "new_york": {"open": 13, "close": 22},
 }
+
+# Filtro de sesion: solo operar durante sesiones con buena liquidez
+SESSION_FILTER_ENABLED = True
+ALLOWED_SESSIONS = ["london", "new_york"]  # Mejores sesiones para EUR/GBP/USD
+
+# Filtro de regimen de mercado
+REGIME_FILTER_ENABLED = True    # Evitar operar en mercado lateral (ranging)

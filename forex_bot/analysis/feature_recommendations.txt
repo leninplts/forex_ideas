@@ -1,0 +1,81 @@
+Feature Analysis - EURUSDm
+============================================================
+
+Total features: 71
+Features a eliminar: 22
+Features a conservar: 49
+
+ELIMINAR:
+  - bb_squeeze (score=3, bajo SHAP, redundante, baja corr target)
+  - ema_cross_9_21 (score=3, baja importancia, bajo SHAP, baja corr target)
+  - macd_hist_positive (score=3, baja importancia, bajo SHAP, redundante)
+  - lower_low (score=3, baja importancia, bajo SHAP, baja corr target)
+  - adx_strong_trend (score=3, baja importancia, bajo SHAP, baja corr target)
+  - upper_shadow_pct (score=3, baja importancia, bajo SHAP, baja corr target)
+  - bb_middle (score=2, bajo SHAP, redundante)
+  - candle_body_pct (score=2, bajo SHAP, baja corr target)
+  - cci_oversold (score=2, baja importancia, bajo SHAP)
+  - atr_h4 (score=2, redundante, baja corr target)
+  - cci_overbought (score=2, baja importancia, bajo SHAP)
+  - atr_d1 (score=2, redundante, baja corr target)
+  - macd_cross (score=2, baja importancia, bajo SHAP)
+  - di_plus_14 (score=2, redundante, baja corr target)
+  - stoch_d (score=2, bajo SHAP, redundante)
+  - sma50_h4 (score=2, bajo SHAP, redundante)
+  - atr_pct (score=2, bajo SHAP, redundante)
+  - rsi_oversold (score=2, baja importancia, bajo SHAP)
+  - rsi_overbought (score=2, baja importancia, bajo SHAP)
+  - higher_high (score=2, bajo SHAP, baja corr target)
+  - stoch_cross (score=2, bajo SHAP, baja corr target)
+  - lower_shadow_pct (score=2, bajo SHAP, baja corr target)
+
+CONSERVAR:
+  - sma_50_dist
+  - sma_200_slope
+  - ema_9
+  - ema_21
+  - return_10
+  - sma_cross_20_50
+  - rsi_h4
+  - bb_pct_b
+  - stoch_k
+  - return_3
+  - trend_h4
+  - return_5
+  - dist_high_10
+  - ema_21_dist
+  - rsi_14
+  - bb_upper
+  - sma_50_slope
+  - atr_14
+  - ema_9_dist
+  - macd_line
+  - sma_50
+  - bullish_candle
+  - adx_14
+  - bb_lower
+  - bb_bandwidth
+  - macd_signal
+  - dist_high_20
+  - cci_20
+  - obv_slope
+  - sma_cross_50_200
+  - obv
+  - volume_ma
+  - rsi_slope
+  - dist_low_20
+  - trend_d1
+  - volume_ratio
+  - atr_ratio
+  - sma_20
+  - sma_20_slope
+  - rsi_d1
+  - sma_20_dist
+  - candle_range_pct
+  - di_minus_14
+  - macd_histogram
+  - sma_200
+  - return_1
+  - sma_200_dist
+  - dist_low_10
+  - sma50_d1
