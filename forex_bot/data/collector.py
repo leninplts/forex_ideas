@@ -111,10 +111,35 @@ class DataCollector:
             if mt5_config.MT5_SERVER:
                 init_kwargs["server"] = mt5_config.MT5_SERVER
 
-        if not self._mt5.initialize(**init_kwargs):
-            error = self._mt5.last_error()
-            logger.error("MT5 initialize() fallo: %s", error)
-            return False
+        # En Docker, reintentar la conexion ya que el RPyC server puede tardar
+        import time
+        max_retries = 10 if _IS_DOCKER else 1
+        retry_delay = 15  # segundos
+
+        for attempt in range(1, max_retries + 1):
+            try:
+                if self._mt5.initialize(**init_kwargs):
+                    break
+                error = self._mt5.last_error()
+                if attempt < max_retries:
+                    logger.warning(
+                        "MT5 initialize() intento %d/%d fallo: %s. Reintentando en %ds...",
+                        attempt, max_retries, error, retry_delay,
+                    )
+                    time.sleep(retry_delay)
+                else:
+                    logger.error("MT5 initialize() fallo tras %d intentos: %s", max_retries, error)
+                    return False
+            except Exception as e:
+                if attempt < max_retries:
+                    logger.warning(
+                        "MT5 conexion intento %d/%d error: %s. Reintentando en %ds...",
+                        attempt, max_retries, e, retry_delay,
+                    )
+                    time.sleep(retry_delay)
+                else:
+                    logger.error("MT5 conexion fallo tras %d intentos: %s", max_retries, e)
+                    return False
 
         # Verificar conexion a cuenta
         account = self._mt5.account_info()

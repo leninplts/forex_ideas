@@ -18,11 +18,11 @@ services:
       - CUSTOM_USER=${VNC_USER:-admin}
       - PASSWORD=${VNC_PASSWORD:-changeme123}
     healthcheck:
-      test: ["CMD-SHELL", "pgrep -f terminal64.exe || exit 1"]
+      test: ["CMD-SHELL", "pgrep -f terminal64.exe && python3 -c 'import socket; s=socket.create_connection((\"localhost\",8001),2); s.close()' || exit 1"]
       interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 120s             # MT5 tarda ~2 min en iniciar la 1ra vez
+      timeout: 15s
+      retries: 10
+      start_period: 300s             # MT5 tarda ~5 min en instalar la 1ra vez
 
   # ---------------------------------------------------------------
   # Forex Bot - el bot de trading con IA
