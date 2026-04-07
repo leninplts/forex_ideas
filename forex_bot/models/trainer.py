@@ -746,10 +746,11 @@ class ModelTrainer:
             filepath = Path(filepath)
 
         # Guardar modelo
-        if self.model_type == "xgboost":
+        if self.model_type == "xgboost" and not isinstance(self.model, EnsembleModel):
             model_path = filepath.with_suffix(".json")
             self.model.save_model(str(model_path))
         else:
+            # Ensemble, LightGBM, calibrado -> usar joblib
             model_path = filepath.with_suffix(".pkl")
             joblib.dump(self.model, model_path)
 

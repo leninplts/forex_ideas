@@ -499,12 +499,15 @@ def run_backtest(
     # Evaluar criterios minimos
     passed = evaluate_criteria(metrics)
 
-    # Guardar modelo si aprueba
+    # Guardar modelo
     if save_model and passed:
         model_path = trainer.save_model()
         print(f"\nModelo guardado en: {model_path}")
     elif save_model and not passed:
-        print("\nModelo NO guardado: no aprobo criterios minimos.")
+        print("\nADVERTENCIA: Modelo no aprobo todos los criterios.")
+        print("Guardando de todas formas (usar --save-model implica intencion de guardar)...")
+        model_path = trainer.save_model()
+        print(f"Modelo guardado en: {model_path}")
 
     return {
         "metrics": metrics,
