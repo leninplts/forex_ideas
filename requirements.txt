@@ -18,8 +18,6 @@ numpy==2.4.4
 
 # --- Indicadores tecnicos ---
 pandas-ta==0.4.71b0
-numba==0.65.0
-llvmlite==0.47.0
 
 # --- Machine Learning ---
 scikit-learn==1.8.0
