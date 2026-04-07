@@ -1,0 +1,53 @@
+services:
+  # ---------------------------------------------------------------
+  # MetaTrader 5 - corre sobre Wine en Linux
+  # Acceso VNC por navegador en :3000 (para login manual la 1ra vez)
+  # RPyC en :8001 (para que el bot se conecte via mt5linux)
+  # ---------------------------------------------------------------
+  mt5:
+    image: gmag11/metatrader5_vnc
+    container_name: mt5
+    restart: unless-stopped
+    volumes:
+      - mt5_config:/config
+    ports:
+      - "${VNC_PORT:-3000}:3000"     # VNC web UI - acceder via navegador
+    expose:
+      - "8001"                        # RPyC - solo visible para el bot (red interna)
+    environment:
+      - CUSTOM_USER=${VNC_USER:-admin}
+      - PASSWORD=${VNC_PASSWORD:-changeme123}
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f terminal64.exe || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s             # MT5 tarda ~2 min en iniciar la 1ra vez
+
+  # ---------------------------------------------------------------
+  # Forex Bot - el bot de trading con IA
+  # Se conecta al MT5 via mt5linux (RPyC)
+  # ---------------------------------------------------------------
+  bot:
+    build: .
+    container_name: forex_bot
+    restart: unless-stopped
+    depends_on:
+      mt5:
+        condition: service_healthy
+    environment:
+      - MT5_HOST=mt5
+      - MT5_PORT=8001
+      - MT5_LOGIN=${MT5_LOGIN}
+      - MT5_PASSWORD=${MT5_PASSWORD}
+      - MT5_SERVER=${MT5_SERVER}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+      - BOT_MODE=${BOT_MODE:-demo}
+    volumes:
+      - ./data_cache:/app/data_cache
+      - ./forex_bot/models/saved:/app/forex_bot/models/saved
+      - ./forex_bot/logs:/app/forex_bot/logs
+
+volumes:
+  mt5_config:

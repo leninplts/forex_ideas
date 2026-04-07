@@ -1,8 +1,15 @@
 """
 Data Collector - Recoleccion de datos de MetaTrader 5.
 Maneja conexion, descarga de datos historicos y en tiempo real.
+
+Soporta 2 modos de conexion:
+  - Local (Windows): usa MetaTrader5 nativo (import MetaTrader5)
+  - Docker/Linux:    usa mt5linux via RPyC (se conecta a MT5 corriendo en otro container)
+
+El modo se detecta automaticamente por la variable de entorno MT5_HOST.
 """
 import logging
+import os
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -15,11 +22,25 @@ from forex_bot.config import settings
 
 logger = logging.getLogger(__name__)
 
+# Detectar modo de conexion: Docker (mt5linux) o Local (MetaTrader5 nativo)
+_MT5_HOST = os.environ.get("MT5_HOST")
+_MT5_PORT = int(os.environ.get("MT5_PORT", "8001"))
+_IS_DOCKER = _MT5_HOST is not None
+
+if _IS_DOCKER:
+    logger.info("Modo Docker detectado: conectando via mt5linux a %s:%d", _MT5_HOST, _MT5_PORT)
+else:
+    logger.info("Modo local detectado: usando MetaTrader5 nativo")
+
 
 class DataCollector:
     """
     Recolector de datos de mercado via MetaTrader 5.
     Maneja conexion, descarga historica, precios en tiempo real y persistencia.
+
+    Soporta 2 backends:
+      - MetaTrader5 nativo (Windows, tu PC local)
+      - mt5linux via RPyC (Docker, VPS Linux)
     """
 
     def __init__(self):
@@ -30,27 +51,65 @@ class DataCollector:
     # Conexion
     # ------------------------------------------------------------------
 
+    def _load_mt5_module(self):
+        """
+        Cargar el modulo MT5 segun el entorno.
+        - Docker: usa mt5linux (RPyC al container MT5)
+        - Local:  usa MetaTrader5 nativo (Windows)
+        """
+        if _IS_DOCKER:
+            try:
+                from mt5linux import MetaTrader5
+                self._mt5 = MetaTrader5(host=_MT5_HOST, port=_MT5_PORT)
+                logger.info("mt5linux conectado a %s:%d", _MT5_HOST, _MT5_PORT)
+                return True
+            except ImportError:
+                logger.error("mt5linux no esta instalado. pip install mt5linux")
+                return False
+            except Exception as e:
+                logger.error("Error conectando mt5linux a %s:%d: %s", _MT5_HOST, _MT5_PORT, e)
+                return False
+        else:
+            try:
+                import MetaTrader5 as mt5
+                self._mt5 = mt5
+                return True
+            except ImportError:
+                logger.error("MetaTrader5 no esta instalado. pip install MetaTrader5")
+                return False
+
     def connect(self) -> bool:
         """Conectar a MetaTrader 5 y verificar cuenta."""
-        try:
-            import MetaTrader5 as mt5
-            self._mt5 = mt5
-        except ImportError:
-            logger.error("MetaTrader5 no esta instalado. pip install MetaTrader5")
+        if not self._load_mt5_module():
             return False
 
-        from forex_bot.config import mt5_config
-
-        # Intentar inicializar MT5
+        # Obtener credenciales: primero de env vars (Docker), luego de mt5_config (local)
         init_kwargs = {}
-        if mt5_config.MT5_PATH:
-            init_kwargs["path"] = mt5_config.MT5_PATH
-        if mt5_config.MT5_LOGIN:
-            init_kwargs["login"] = mt5_config.MT5_LOGIN
-        if mt5_config.MT5_PASSWORD:
-            init_kwargs["password"] = mt5_config.MT5_PASSWORD
-        if mt5_config.MT5_SERVER:
-            init_kwargs["server"] = mt5_config.MT5_SERVER
+
+        if _IS_DOCKER:
+            # En Docker las credenciales vienen de variables de entorno
+            mt5_login = os.environ.get("MT5_LOGIN")
+            mt5_password = os.environ.get("MT5_PASSWORD")
+            mt5_server = os.environ.get("MT5_SERVER")
+
+            if mt5_login:
+                init_kwargs["login"] = int(mt5_login)
+            if mt5_password:
+                init_kwargs["password"] = mt5_password
+            if mt5_server:
+                init_kwargs["server"] = mt5_server
+            # No se pasa path en Docker (MT5 ya esta corriendo en el otro container)
+        else:
+            # En local, usar mt5_config.py
+            from forex_bot.config import mt5_config
+            if mt5_config.MT5_PATH:
+                init_kwargs["path"] = mt5_config.MT5_PATH
+            if mt5_config.MT5_LOGIN:
+                init_kwargs["login"] = mt5_config.MT5_LOGIN
+            if mt5_config.MT5_PASSWORD:
+                init_kwargs["password"] = mt5_config.MT5_PASSWORD
+            if mt5_config.MT5_SERVER:
+                init_kwargs["server"] = mt5_config.MT5_SERVER
 
         if not self._mt5.initialize(**init_kwargs):
             error = self._mt5.last_error()

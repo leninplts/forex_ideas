@@ -7,7 +7,10 @@
 # =============================================================================
 
 # --- Conexion con MetaTrader 5 ---
-metatrader5==5.0.5735
+# Local (Windows): usa MetaTrader5 nativo
+# Docker (Linux):  usa mt5linux via RPyC (se conecta a MT5 en otro container)
+metatrader5==5.0.5735; sys_platform == "win32"
+mt5linux>=1.0.0; sys_platform == "linux"
 
 # --- Manipulacion de datos ---
 pandas==3.0.2
