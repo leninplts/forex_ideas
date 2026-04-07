@@ -36,6 +36,7 @@ class ModelPredictor:
         """
         self.model = None
         self.model_type = None
+        self.model_name = ""
         self._feature_names = []
         self._metadata = {}
         self._train_date = None
@@ -80,6 +81,8 @@ class ModelPredictor:
                     self._train_date = datetime.fromisoformat(train_date_str)
                 except ValueError:
                     self._train_date = None
+
+        self.model_name = filepath.name
 
         logger.info(
             "Modelo cargado: %s (%s, %d features)",

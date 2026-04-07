@@ -3,10 +3,16 @@ Telegram Notifier - Envio de alertas via Telegram Bot API.
 Usa httpx (HTTP directo) en vez de python-telegram-bot async para
 compatibilidad con el loop sincrono del bot.
 
+Soporta comandos interactivos:
+  /balance - consultar balance y estado actual
+  /status  - ver posiciones abiertas
+
 API de Telegram: https://core.telegram.org/bots/api#sendmessage
 """
 import logging
-from typing import Optional
+import threading
+import time
+from typing import Optional, Callable
 
 import httpx
 
@@ -14,8 +20,9 @@ from forex_bot.config import settings
 
 logger = logging.getLogger(__name__)
 
-# URL base de la API de Telegram
+# URLs de la API de Telegram
 TELEGRAM_API_URL = "https://api.telegram.org/bot{token}/sendMessage"
+TELEGRAM_UPDATES_URL = "https://api.telegram.org/bot{token}/getUpdates"
 
 
 class TelegramNotifier:
@@ -58,6 +65,12 @@ class TelegramNotifier:
         self.chat_id = str(chat_id) if chat_id else ""
         self._enabled = bool(self.bot_token and self.chat_id and settings.TELEGRAM_ENABLED)
 
+        # Callbacks para comandos interactivos (se registran desde main.py)
+        self._command_handlers = {}
+        self._polling_thread = None
+        self._polling_active = False
+        self._last_update_id = 0
+
         if self._enabled:
             logger.info("Telegram notificaciones habilitadas (chat_id: %s)", self.chat_id)
         else:
@@ -66,6 +79,104 @@ class TelegramNotifier:
     @property
     def is_enabled(self) -> bool:
         return self._enabled
+
+    # ------------------------------------------------------------------
+    # Comandos interactivos (polling)
+    # ------------------------------------------------------------------
+
+    def register_command(self, command: str, handler: Callable):
+        """
+        Registrar un handler para un comando de Telegram.
+        El handler recibe 0 argumentos y debe retornar un string con la respuesta.
+
+        Args:
+            command: Comando sin / (ej: "balance", "status")
+            handler: Funcion que retorna str con la respuesta
+        """
+        self._command_handlers[command.lower()] = handler
+        logger.info("Comando Telegram registrado: /%s", command)
+
+    def start_polling(self):
+        """Iniciar thread de polling para escuchar comandos."""
+        if not self._enabled or not self._command_handlers:
+            return
+
+        self._polling_active = True
+        self._polling_thread = threading.Thread(
+            target=self._polling_loop,
+            daemon=True,
+            name="telegram-polling",
+        )
+        self._polling_thread.start()
+        logger.info("Telegram polling iniciado (comandos: %s)",
+                     ", ".join(f"/{c}" for c in self._command_handlers))
+
+    def stop_polling(self):
+        """Detener thread de polling."""
+        self._polling_active = False
+        if self._polling_thread and self._polling_thread.is_alive():
+            self._polling_thread.join(timeout=5)
+
+    def _polling_loop(self):
+        """Loop de polling que escucha mensajes/comandos de Telegram."""
+        url = TELEGRAM_UPDATES_URL.format(token=self.bot_token)
+
+        while self._polling_active:
+            try:
+                params = {
+                    "offset": self._last_update_id + 1,
+                    "timeout": 10,
+                    "allowed_updates": '["message"]',
+                }
+                response = httpx.get(url, params=params, timeout=15)
+
+                if response.status_code != 200:
+                    time.sleep(5)
+                    continue
+
+                data = response.json()
+                if not data.get("ok"):
+                    time.sleep(5)
+                    continue
+
+                for update in data.get("result", []):
+                    self._last_update_id = update["update_id"]
+                    self._process_update(update)
+
+            except httpx.TimeoutException:
+                continue
+            except Exception as e:
+                logger.error("Error en Telegram polling: %s", e)
+                time.sleep(10)
+
+    def _process_update(self, update: dict):
+        """Procesar un update de Telegram y responder si es un comando conocido."""
+        message = update.get("message", {})
+        text = message.get("text", "").strip()
+        chat_id = str(message.get("chat", {}).get("id", ""))
+
+        # Solo responder a nuestro chat_id
+        if chat_id != self.chat_id:
+            return
+
+        # Verificar si es un comando
+        if not text.startswith("/"):
+            return
+
+        command = text.split()[0].lstrip("/").lower().split("@")[0]  # /balance@botname -> balance
+
+        handler = self._command_handlers.get(command)
+        if handler:
+            try:
+                response_text = handler()
+                if response_text:
+                    self.send_message(response_text)
+            except Exception as e:
+                logger.error("Error ejecutando comando /%s: %s", command, e)
+                self.send_message(f"Error ejecutando /{command}: {str(e)[:200]}")
+        else:
+            available = ", ".join(f"/{c}" for c in self._command_handlers)
+            self.send_message(f"Comando desconocido: {text}\nDisponibles: {available}")
 
     # ------------------------------------------------------------------
     # Enviar mensaje
@@ -324,6 +435,43 @@ class TelegramNotifier:
         lines.append(f"\n<b>Total P&L: {total_sign}${total_profit:.2f}</b>")
 
         return self.send_message("\n".join(lines))
+
+    def notify_bot_started(self, account: dict, model_info: str = "", mode: str = "demo") -> bool:
+        """
+        Notificar que el bot arranco correctamente.
+
+        Args:
+            account: Dict de get_account_info() con balance, login, server, etc.
+            model_info: Nombre del modelo cargado
+            mode: Modo de operacion (demo/live)
+        """
+        from datetime import datetime
+        now = datetime.now().strftime("%Y-%m-%d %H:%M UTC")
+
+        login = account.get("login", "?")
+        server = account.get("server", "?")
+        balance = account.get("balance", 0)
+        currency = account.get("currency", "USD")
+        leverage = account.get("leverage", "?")
+
+        text = (
+            f"<b>BOT INICIADO</b>\n"
+            f"Modo: {mode.upper()}\n"
+            f"Fecha: {now}\n\n"
+            f"<b>Cuenta</b>\n"
+            f"  Login: {login}\n"
+            f"  Servidor: {server}\n"
+            f"  Balance: ${balance:.2f} {currency}\n"
+            f"  Apalancamiento: 1:{leverage}\n\n"
+            f"<b>Configuracion</b>\n"
+            f"  Modelo: {model_info}\n"
+            f"  Pares: {', '.join(settings.SYMBOLS)}\n"
+            f"  Timeframe: {settings.TIMEFRAME_PRIMARY}\n"
+            f"  Riesgo/trade: {settings.RISK_PER_TRADE:.0%}\n"
+            f"  Max trades: {settings.MAX_OPEN_TRADES}\n"
+            f"  Threshold: {settings.CONFIDENCE_THRESHOLD}"
+        )
+        return self.send_message(text)
 
     def notify_error(self, error_msg: str) -> bool:
         """

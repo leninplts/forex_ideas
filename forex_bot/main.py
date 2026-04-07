@@ -163,6 +163,24 @@ class ForexBot:
         print(f"  Max trades: {settings.MAX_OPEN_TRADES}")
         print(f"{'='*60}\n")
 
+        # Registrar comandos de Telegram y notificar startup
+        if self.notifier:
+            model_name = self.predictor.model_name if hasattr(self.predictor, "model_name") else "?"
+
+            # Registrar /balance
+            self.notifier.register_command("balance", self._cmd_balance)
+            # Registrar /status
+            self.notifier.register_command("status", self._cmd_status)
+            # Iniciar polling de comandos
+            self.notifier.start_polling()
+
+            # Notificar que el bot arranco
+            self.notifier.notify_bot_started(
+                account=account or {},
+                model_info=model_name,
+                mode=self.mode,
+            )
+
         return True
 
     # ------------------------------------------------------------------
@@ -261,6 +279,89 @@ class ForexBot:
                 time.sleep(30)
 
         self._shutdown()
+
+    # ------------------------------------------------------------------
+    # Comandos Telegram
+    # ------------------------------------------------------------------
+
+    def _cmd_balance(self) -> str:
+        """Handler para /balance — consultar balance y estado de cuenta."""
+        account = self.collector.get_account_info()
+        if not account:
+            return "<b>/balance</b>\nNo se pudo obtener info de cuenta"
+
+        positions = self.executor.get_open_positions() if self.executor else []
+        total_floating = sum(p.get("profit", 0) for p in positions)
+        floating_sign = "+" if total_floating >= 0 else ""
+
+        risk_report = self.risk_manager.get_risk_report()
+
+        return (
+            f"<b>BALANCE</b>\n\n"
+            f"Balance: ${account['balance']:.2f} {account.get('currency', 'USD')}\n"
+            f"Equity: ${account['equity']:.2f}\n"
+            f"Margen usado: ${account['margin']:.2f}\n"
+            f"Margen libre: ${account['free_margin']:.2f}\n"
+            f"Apalancamiento: 1:{account['leverage']}\n\n"
+            f"<b>Posiciones</b>\n"
+            f"Abiertas: {len(positions)}\n"
+            f"P&L flotante: {floating_sign}${total_floating:.2f}\n\n"
+            f"<b>Riesgo</b>\n"
+            f"DD diario: {risk_report.get('daily_drawdown_pct', 0):.1f}%\n"
+            f"DD total: {risk_report.get('total_drawdown_pct', 0):.1f}%\n"
+            f"Trades hoy: {risk_report.get('daily_trades', 0)}"
+        )
+
+    def _cmd_status(self) -> str:
+        """Handler para /status — ver posiciones abiertas en detalle."""
+        positions = self.executor.get_open_positions() if self.executor else []
+
+        if not positions:
+            return "<b>/status</b>\nNo hay posiciones abiertas"
+
+        lines = [f"<b>POSICIONES ({len(positions)})</b>\n"]
+        total_profit = 0
+
+        for i, p in enumerate(positions, 1):
+            symbol = p.get("symbol", "?")
+            ptype = p.get("type", "?")
+            open_price = p.get("open_price", 0)
+            current = p.get("current_price", 0)
+            profit = p.get("profit", 0)
+            sl = p.get("sl", 0)
+            tp = p.get("tp", 0)
+            volume = p.get("volume", 0)
+            open_time = p.get("time", None)
+            total_profit += profit
+
+            pip_size = 0.01 if "JPY" in symbol else 0.0001
+            if ptype == "BUY":
+                pips = (current - open_price) / pip_size
+            else:
+                pips = (open_price - current) / pip_size
+
+            duration_str = ""
+            if open_time:
+                delta = datetime.now() - open_time
+                hours = int(delta.total_seconds() // 3600)
+                mins = int((delta.total_seconds() % 3600) // 60)
+                duration_str = f"{hours}h{mins:02d}m"
+
+            pnl_sign = "+" if profit >= 0 else ""
+            pips_sign = "+" if pips >= 0 else ""
+
+            lines.append(
+                f"<b>#{i} {ptype} {symbol}</b>\n"
+                f"  Entrada: {open_price:.5f} | Actual: {current:.5f}\n"
+                f"  P&L: {pnl_sign}${profit:.2f} ({pips_sign}{pips:.1f} pips)\n"
+                f"  SL: {sl:.5f} | TP: {tp:.5f}\n"
+                f"  Lot: {volume:.2f} | {duration_str}"
+            )
+
+        total_sign = "+" if total_profit >= 0 else ""
+        lines.append(f"\n<b>Total: {total_sign}${total_profit:.2f}</b>")
+
+        return "\n".join(lines)
 
     # ------------------------------------------------------------------
     # Procesamiento por simbolo
@@ -395,6 +496,10 @@ class ForexBot:
         """Cerrar todo de forma limpia."""
         print("\n--- Cerrando bot ---")
         self.running = False
+
+        # Detener polling de Telegram
+        if self.notifier:
+            self.notifier.stop_polling()
 
         # Log final
         report = self.risk_manager.get_risk_report()
