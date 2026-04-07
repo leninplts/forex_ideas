@@ -63,8 +63,8 @@ class DataCollector:
                 self._mt5 = MetaTrader5(host=_MT5_HOST, port=_MT5_PORT)
                 logger.info("mt5linux conectado a %s:%d", _MT5_HOST, _MT5_PORT)
                 return True
-            except ImportError:
-                logger.error("mt5linux no esta instalado. pip install mt5linux")
+            except ImportError as e:
+                logger.error("mt5linux no esta instalado: %s. pip install mt5linux", e)
                 return False
             except Exception as e:
                 logger.error("Error conectando mt5linux a %s:%d: %s", _MT5_HOST, _MT5_PORT, e)

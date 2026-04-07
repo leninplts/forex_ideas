@@ -9,8 +9,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Copiar requirements primero (para aprovechar cache de Docker)
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt \
-    && pip install --no-cache-dir mt5linux>=1.0.0 rpyc==5.2.3 \
+RUN pip install --no-cache-dir -r requirements.txt
+
+# mt5linux + rpyc compatible (separado para evitar cache de Docker)
+RUN pip install --no-cache-dir mt5linux>=1.0.0 rpyc==5.2.3 \
     && python -c "from mt5linux import MetaTrader5; print('mt5linux OK')"
 
 # Copiar el resto del proyecto
