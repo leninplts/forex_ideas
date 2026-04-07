@@ -10,6 +10,7 @@ services:
     restart: unless-stopped
     volumes:
       - mt5_config:/config
+      - ./mt5_start.sh:/Metatrader/start.sh:ro  # Fix: reemplaza script roto (flag -w no existe en rpyc nuevo)
     ports:
       - "${VNC_PORT:-3000}:3000"     # VNC web UI - acceder via navegador
     expose:
