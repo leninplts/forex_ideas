@@ -40,13 +40,35 @@ class MT5Executor:
         self._import_mt5()
 
     def _import_mt5(self):
-        """Importar modulo MetaTrader5."""
-        try:
-            import MetaTrader5 as mt5
-            self._mt5 = mt5
-        except ImportError:
-            logger.error("MetaTrader5 no instalado")
-            self._mt5 = None
+        """
+        Importar modulo MetaTrader5.
+        Si hay un collector conectado, reutilizar su modulo MT5 (funciona en Docker y local).
+        Si no, importar directamente.
+        """
+        # Primero: reutilizar el modulo del collector (ya maneja Docker vs local)
+        if self._collector and self._collector._mt5 is not None:
+            self._mt5 = self._collector._mt5
+            return
+
+        # Fallback: importar segun el entorno
+        import os
+        if os.environ.get("MT5_HOST"):
+            try:
+                from mt5linux import MetaTrader5
+                host = os.environ.get("MT5_HOST", "localhost")
+                port = int(os.environ.get("MT5_PORT", "8001"))
+                self._mt5 = MetaTrader5(host=host, port=port)
+                self._mt5.initialize()
+            except ImportError:
+                logger.error("mt5linux no instalado")
+                self._mt5 = None
+        else:
+            try:
+                import MetaTrader5 as mt5
+                self._mt5 = mt5
+            except ImportError:
+                logger.error("MetaTrader5 no instalado")
+                self._mt5 = None
 
     def _is_ready(self) -> bool:
         """Verificar que MT5 esta disponible y conectado."""
