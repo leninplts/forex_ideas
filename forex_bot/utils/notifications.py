@@ -31,14 +31,28 @@ class TelegramNotifier:
             bot_token: Token del bot de Telegram (de @BotFather)
             chat_id: ID del chat donde enviar mensajes
         """
-        # Intentar cargar de config si no se pasan directamente
-        if bot_token is None or chat_id is None:
-            try:
-                from forex_bot.config import mt5_config
-                bot_token = bot_token or getattr(mt5_config, "TELEGRAM_BOT_TOKEN", "")
-                chat_id = chat_id or getattr(mt5_config, "TELEGRAM_CHAT_ID", "")
-            except ImportError:
-                pass
+        import os
+
+        # Prioridad: argumento explicito > env var > mt5_config.py
+        # Si se paso argumento (incluso vacio), respetar esa decision
+        if bot_token is None:
+            bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+            # Fallback: mt5_config.py (modo local Windows)
+            if not bot_token:
+                try:
+                    from forex_bot.config import mt5_config
+                    bot_token = getattr(mt5_config, "TELEGRAM_BOT_TOKEN", "")
+                except ImportError:
+                    pass
+
+        if chat_id is None:
+            chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
+            if not chat_id:
+                try:
+                    from forex_bot.config import mt5_config
+                    chat_id = getattr(mt5_config, "TELEGRAM_CHAT_ID", "")
+                except ImportError:
+                    pass
 
         self.bot_token = bot_token or ""
         self.chat_id = str(chat_id) if chat_id else ""
