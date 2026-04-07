@@ -234,31 +234,94 @@ class TelegramNotifier:
 
         return self.send_message("\n".join(lines))
 
-    def notify_positions_status(self, positions: list) -> bool:
+    def notify_positions_status(self, positions: list, prev_positions: dict = None) -> bool:
         """
-        Notificar estado de posiciones abiertas (cada check de trailing).
+        Notificar estado detallado de posiciones abiertas (cada 5 min).
+        Incluye: precio de entrada vs actual, distancia a SL/TP,
+        si el trailing se movio, y un ID secuencial para cada posicion.
 
         Args:
             positions: Lista de dicts de get_open_positions()
+            prev_positions: Dict {ticket: {sl, tp}} del check anterior
+                            para detectar si el trailing movio el SL
         """
         if not positions:
             return False
 
-        lines = [f"<b>POSICIONES ABIERTAS ({len(positions)})</b>\n"]
+        from datetime import datetime
+        now = datetime.now().strftime("%H:%M UTC")
+
+        lines = [f"<b>MONITOR - {now}</b>"]
+        lines.append(f"{len(positions)} posicion(es) abierta(s)\n")
         total_profit = 0
 
-        for p in positions:
+        for i, p in enumerate(positions, 1):
+            ticket = p.get("ticket", 0)
+            symbol = p.get("symbol", "?")
+            ptype = p.get("type", "?")
+            volume = p.get("volume", 0)
+            open_price = p.get("open_price", 0)
+            current = p.get("current_price", 0)
+            sl = p.get("sl", 0)
+            tp = p.get("tp", 0)
             profit = p.get("profit", 0)
+            swap = p.get("swap", 0)
+            open_time = p.get("time", None)
             total_profit += profit
-            sign = "+" if profit >= 0 else ""
+
+            # Calcular pips de ganancia/perdida
+            pip_size = 0.01 if "JPY" in symbol else 0.0001
+            if ptype == "BUY":
+                pips_current = (current - open_price) / pip_size
+            else:
+                pips_current = (open_price - current) / pip_size
+
+            # Distancia a SL y TP en pips
+            if ptype == "BUY":
+                pips_to_sl = (current - sl) / pip_size if sl > 0 else 0
+                pips_to_tp = (tp - current) / pip_size if tp > 0 else 0
+            else:
+                pips_to_sl = (sl - current) / pip_size if sl > 0 else 0
+                pips_to_tp = (current - tp) / pip_size if tp > 0 else 0
+
+            # Duracion
+            duration_str = ""
+            if open_time:
+                delta = datetime.now() - open_time
+                hours = int(delta.total_seconds() // 3600)
+                mins = int((delta.total_seconds() % 3600) // 60)
+                duration_str = f"{hours}h{mins:02d}m"
+
+            # Detectar si el trailing movio el SL
+            trailing_info = ""
+            if prev_positions and ticket in prev_positions:
+                old_sl = prev_positions[ticket].get("sl", 0)
+                if old_sl > 0 and sl > 0 and abs(sl - old_sl) > pip_size * 0.5:
+                    sl_moved_pips = abs(sl - old_sl) / pip_size
+                    trailing_info = f"\n  Trailing: SL movido {sl_moved_pips:.1f} pips ({old_sl:.5f} -> {sl:.5f})"
+                else:
+                    trailing_info = "\n  Trailing: sin cambio"
+
+            # P&L con signo
+            pnl_sign = "+" if profit >= 0 else ""
+            pips_sign = "+" if pips_current >= 0 else ""
+
             lines.append(
-                f"{p.get('type', '?')} {p.get('symbol', '?')} "
-                f"{p.get('volume', 0):.2f} lots | "
-                f"P&L: {sign}${profit:.2f}"
+                f"<b>#{i} {ptype} {symbol}</b> [ticket:{ticket}]\n"
+                f"  Entrada: {open_price:.5f} | Actual: {current:.5f}\n"
+                f"  P&L: {pnl_sign}${profit:.2f} ({pips_sign}{pips_current:.1f} pips)\n"
+                f"  SL: {sl:.5f} ({pips_to_sl:.0f} pips) | TP: {tp:.5f} ({pips_to_tp:.0f} pips)\n"
+                f"  Lot: {volume:.2f} | Swap: ${swap:.2f} | Duracion: {duration_str}"
+                f"{trailing_info}"
             )
 
-        sign = "+" if total_profit >= 0 else ""
-        lines.append(f"\nTotal: {sign}${total_profit:.2f}")
+            # Linea separadora entre posiciones
+            if i < len(positions):
+                lines.append("")
+
+        # Total
+        total_sign = "+" if total_profit >= 0 else ""
+        lines.append(f"\n<b>Total P&L: {total_sign}${total_profit:.2f}</b>")
 
         return self.send_message("\n".join(lines))
 

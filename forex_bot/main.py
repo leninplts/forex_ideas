@@ -183,6 +183,7 @@ class ForexBot:
 
         last_processed_hour = -1
         last_trailing_check = 0  # timestamp del ultimo check de trailing
+        prev_positions_snapshot = {}  # {ticket: {sl, tp}} para detectar cambios de trailing
 
         # Intervalo de check del trailing stop (en segundos)
         trailing_interval = settings.TRAILING_STOP_CHECK_SECONDS  # 300 = 5 min
@@ -232,9 +233,17 @@ class ForexBot:
                             )
                             self._manage_positions()
 
-                            # Notificar estado de posiciones cada check
+                            # Notificar estado detallado de posiciones
                             if self.notifier:
-                                self.notifier.notify_positions_status(positions)
+                                self.notifier.notify_positions_status(
+                                    positions, prev_positions_snapshot,
+                                )
+
+                            # Guardar snapshot actual para comparar en el proximo check
+                            prev_positions_snapshot = {
+                                p["ticket"]: {"sl": p["sl"], "tp": p["tp"]}
+                                for p in positions
+                            }
                     last_trailing_check = now_ts
 
                 # Dormir para no consumir CPU (revisar cada 10 segundos)
