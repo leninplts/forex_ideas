@@ -8,7 +8,7 @@ services:
     image: gmag11/metatrader5_vnc
     container_name: mt5
     restart: unless-stopped
-    entrypoint: /bin/bash -c "sed -i -E 's/ -w [^ ]+ python\.exe//' /Metatrader/start.sh && exec /init"
+    entrypoint: /bin/bash -c "sed -i -E 's/ -w [^ ]+ python\.exe//' /Metatrader/start.sh && sed -i 's/--no-cache-dir rpyc /--no-cache-dir rpyc==5.2.3 /' /Metatrader/start.sh && pip install --break-system-packages rpyc==5.2.3 2>/dev/null; exec /init"
     volumes:
       - mt5_config:/config
     ports:
