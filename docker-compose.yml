@@ -8,7 +8,16 @@ services:
     image: gmag11/metatrader5_vnc
     container_name: mt5
     restart: unless-stopped
-    entrypoint: /bin/bash -c "sed -i -E 's/ -w [^ ]+ python\.exe//' /Metatrader/start.sh && sed -i 's/--no-cache-dir rpyc /--no-cache-dir rpyc==5.2.3 /' /Metatrader/start.sh && pip install --break-system-packages rpyc==5.2.3 2>/dev/null; exec /init"
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+        # Fix 1: RPyC server debe correr en Wine Python (no Linux Python)
+        sed -i 's/python3 -m mt5linux .*/wine python.exe -m mt5linux --host 0.0.0.0 -p \$$mt5server_port \&/' /Metatrader/start.sh
+        # Fix 2: Pinear rpyc compatible en Wine Python
+        sed -i 's/--no-cache-dir rpyc /--no-cache-dir rpyc==5.2.3 /' /Metatrader/start.sh
+        wine python.exe -m pip install rpyc==5.2.3 2>/dev/null || true
+        exec /init
     volumes:
       - mt5_config:/config
     ports:
