@@ -14,12 +14,18 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copiar el resto del proyecto
 COPY . .
 
-# Crear directorios necesarios
-RUN mkdir -p data_cache forex_bot/models/saved forex_bot/logs forex_bot/analysis
+# Crear usuario no-root y directorios necesarios
+RUN useradd -m botuser \
+    && mkdir -p data_cache forex_bot/models/saved forex_bot/logs forex_bot/analysis \
+    && chown -R botuser:botuser /app
 
-# No correr como root
-RUN useradd -m botuser && chown -R botuser:botuser /app
-USER botuser
+# Crear entrypoint que arregla permisos de bind mounts y ejecuta como botuser
+RUN printf '#!/bin/sh\nchown -R botuser:botuser /app/data_cache /app/forex_bot/models/saved /app/forex_bot/logs 2>/dev/null\nexec gosu botuser "$@"\n' > /entrypoint.sh \
+    && chmod +x /entrypoint.sh
 
-# Entrypoint: el bot principal
+# Instalar gosu para drop de privilegios
+RUN apt-get update && apt-get install -y --no-install-recommends gosu \
+    && rm -rf /var/lib/apt/lists/*
+
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["python", "forex_bot/main.py"]
