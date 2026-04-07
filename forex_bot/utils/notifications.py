@@ -171,6 +171,97 @@ class TelegramNotifier:
         )
         return self.send_message(text)
 
+    def notify_signal_decision(self, decisions: list) -> bool:
+        """
+        Notificar las decisiones del modelo para todos los pares.
+        Se envia cada hora cuando el bot evalua los 3 pares.
+
+        Args:
+            decisions: Lista de dicts con {symbol, signal, confidence, reason,
+                       entry_price, sl_pips, tp_pips, filters_passed}
+        """
+        from datetime import datetime
+        now = datetime.now().strftime("%H:%M UTC")
+
+        lines = [f"<b>ANALISIS H1 - {now}</b>\n"]
+
+        for d in decisions:
+            signal = d.get("signal", "HOLD")
+            conf = d.get("confidence", 0)
+            symbol = d.get("symbol", "?")
+            reason = d.get("reason", "")
+            filters = d.get("filters_passed", True)
+
+            if signal == "BUY":
+                icon = "BUY"
+            elif signal == "SELL":
+                icon = "SELL"
+            else:
+                icon = "HOLD"
+
+            line = f"<b>{symbol}</b>: {icon} ({conf:.0%})"
+
+            if signal != "HOLD":
+                sl = d.get("sl_pips", 0)
+                tp = d.get("tp_pips", 0)
+                line += f" | SL:{sl:.0f} TP:{tp:.0f} pips"
+                if not filters:
+                    line += " [FILTRADO]"
+            elif reason:
+                line += f"\n  {reason}"
+
+            lines.append(line)
+
+        return self.send_message("\n".join(lines))
+
+    def notify_trailing_update(self, updates: list) -> bool:
+        """
+        Notificar actualizaciones de trailing stop.
+
+        Args:
+            updates: Lista de dicts con {symbol, type, ticket, old_sl, new_sl, profit}
+        """
+        if not updates:
+            return False
+
+        lines = ["<b>TRAILING STOP UPDATE</b>\n"]
+        for u in updates:
+            lines.append(
+                f"{u.get('type', '?')} {u.get('symbol', '?')} #{u.get('ticket', 0)}\n"
+                f"  SL: {u.get('old_sl', 0):.5f} -> {u.get('new_sl', 0):.5f}\n"
+                f"  P&L: ${u.get('profit', 0):.2f}"
+            )
+
+        return self.send_message("\n".join(lines))
+
+    def notify_positions_status(self, positions: list) -> bool:
+        """
+        Notificar estado de posiciones abiertas (cada check de trailing).
+
+        Args:
+            positions: Lista de dicts de get_open_positions()
+        """
+        if not positions:
+            return False
+
+        lines = [f"<b>POSICIONES ABIERTAS ({len(positions)})</b>\n"]
+        total_profit = 0
+
+        for p in positions:
+            profit = p.get("profit", 0)
+            total_profit += profit
+            sign = "+" if profit >= 0 else ""
+            lines.append(
+                f"{p.get('type', '?')} {p.get('symbol', '?')} "
+                f"{p.get('volume', 0):.2f} lots | "
+                f"P&L: {sign}${profit:.2f}"
+            )
+
+        sign = "+" if total_profit >= 0 else ""
+        lines.append(f"\nTotal: {sign}${total_profit:.2f}")
+
+        return self.send_message("\n".join(lines))
+
     def notify_error(self, error_msg: str) -> bool:
         """
         Alertar error critico.

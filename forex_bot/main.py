@@ -199,9 +199,16 @@ class ForexBot:
                     last_processed_hour = now.hour
                     logger.info("--- Ciclo H1: %s ---", now.strftime("%Y-%m-%d %H:%M"))
 
-                    # Procesar cada par
+                    # Procesar cada par y acumular decisiones
+                    decisions = []
                     for symbol in settings.SYMBOLS:
-                        self._process_symbol(symbol)
+                        decision = self._process_symbol(symbol)
+                        if decision:
+                            decisions.append(decision)
+
+                    # Notificar decisiones del modelo por Telegram
+                    if decisions and self.notifier:
+                        self.notifier.notify_signal_decision(decisions)
 
                     # Gestionar posiciones (incluye trailing)
                     self._manage_positions()
@@ -224,6 +231,10 @@ class ForexBot:
                                 now.strftime("%H:%M"), len(positions),
                             )
                             self._manage_positions()
+
+                            # Notificar estado de posiciones cada check
+                            if self.notifier:
+                                self.notifier.notify_positions_status(positions)
                     last_trailing_check = now_ts
 
                 # Dormir para no consumir CPU (revisar cada 10 segundos)
@@ -246,14 +257,19 @@ class ForexBot:
     # Procesamiento por simbolo
     # ------------------------------------------------------------------
 
-    def _process_symbol(self, symbol: str):
-        """Procesar un par: descargar datos, generar senal, ejecutar."""
+    def _process_symbol(self, symbol: str) -> dict:
+        """
+        Procesar un par: descargar datos, generar senal, ejecutar.
+
+        Returns:
+            Dict con la decision del modelo para notificacion, o None si fallo.
+        """
         try:
             # Descargar datos multi-timeframe
             data = self.collector.get_multiple_timeframes(symbol)
             if data is None:
                 logger.warning("No se pudieron obtener datos de %s", symbol)
-                return
+                return None
 
             df_h1 = data.get(settings.TIMEFRAME_PRIMARY)
             df_h4 = data.get(settings.TIMEFRAME_HIGHER)
@@ -261,7 +277,7 @@ class ForexBot:
 
             if df_h1 is None or len(df_h1) < 200:
                 logger.warning("Datos insuficientes para %s (%d barras)", symbol, len(df_h1) if df_h1 is not None else 0)
-                return
+                return None
 
             # Obtener precio actual
             current_price = self.collector.get_current_price(symbol)
@@ -274,11 +290,24 @@ class ForexBot:
             # Loggear senal
             self.trading_logger.log_signal(signal, executed=False)
 
+            # Preparar decision para notificacion
+            decision = {
+                "symbol": symbol,
+                "signal": signal["signal"],
+                "confidence": signal["confidence"],
+                "reason": signal.get("reason", ""),
+                "entry_price": signal.get("entry_price", 0),
+                "sl_pips": signal.get("sl_pips", 0),
+                "tp_pips": signal.get("tp_pips", 0),
+                "filters_passed": signal.get("filters_passed", True),
+            }
+
             # Procesar si es operable
             if signal["signal"] != "HOLD":
                 result = self.order_manager.process_signal(signal)
 
                 if result["executed"]:
+                    decision["executed"] = True
                     self.trading_logger.log_signal(signal, executed=True)
                     self.trading_logger.log_trade(signal, self.risk_manager.current_balance)
                     if self.notifier:
@@ -292,11 +321,16 @@ class ForexBot:
                             "confidence": signal["confidence"],
                         })
                 else:
+                    decision["executed"] = False
+                    decision["reject_reason"] = result.get("error_msg", "")
                     logger.info("Senal %s %s no ejecutada: %s", signal["signal"], symbol, result["error_msg"])
+
+            return decision
 
         except Exception as e:
             logger.error("Error procesando %s: %s", symbol, e, exc_info=True)
             self.trading_logger.log_error(e, f"procesando {symbol}")
+            return None
 
     # ------------------------------------------------------------------
     # Gestion de posiciones
