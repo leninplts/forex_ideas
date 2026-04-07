@@ -13,8 +13,8 @@ metatrader5==5.0.5735; sys_platform == "win32"
 mt5linux>=1.0.0; sys_platform == "linux"
 
 # --- Manipulacion de datos ---
-pandas==3.0.2
-numpy==2.4.4
+pandas>=2.2,<4
+numpy>=1.24,<2.3
 
 # --- Indicadores tecnicos ---
 pandas-ta==0.4.71b0
