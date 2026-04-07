@@ -8,9 +8,9 @@ services:
     image: gmag11/metatrader5_vnc
     container_name: mt5
     restart: unless-stopped
+    entrypoint: /bin/bash -c "sed -i -E 's/ -w [^ ]+ python\.exe//' /Metatrader/start.sh && exec /init"
     volumes:
       - mt5_config:/config
-      - ./mt5_start.sh:/Metatrader/start.sh:ro  # Fix: reemplaza script roto (flag -w no existe en rpyc nuevo)
     ports:
       - "${VNC_PORT:-3000}:3000"     # VNC web UI - acceder via navegador
     expose:
