@@ -9,7 +9,8 @@ __pycache__/
 .env.example
 *.csv
 data_cache/
-forex_bot/models/saved/
+# Modelos: NO excluir, el bot necesita el .pkl para arrancar
+# forex_bot/models/saved/
 forex_bot/logs/
 forex_bot/analysis/
 forex_bot/config/mt5_config.py

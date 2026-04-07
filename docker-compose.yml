@@ -51,8 +51,8 @@ services:
       - BOT_MODE=${BOT_MODE:-demo}
     volumes:
       - ./data_cache:/app/data_cache
-      - ./forex_bot/models/saved:/app/forex_bot/models/saved
       - ./forex_bot/logs:/app/forex_bot/logs
+      # Modelo va dentro de la imagen (no como volumen) para que no se pierda
 
 volumes:
   mt5_config:
