@@ -24,7 +24,7 @@ RUN useradd -m botuser \
     && chown -R botuser:botuser /app
 
 # Crear entrypoint que arregla permisos de bind mounts y ejecuta como botuser
-RUN printf '#!/bin/sh\nchown -R botuser:botuser /app/data_cache /app/forex_bot/models/saved /app/forex_bot/logs 2>/dev/null\nexec gosu botuser "$@"\n' > /entrypoint.sh \
+RUN printf '#!/bin/sh\nmkdir -p /app/data_cache /app/forex_bot/models/saved /app/forex_bot/logs /app/forex_bot/analysis\nchown -R botuser:botuser /app/data_cache /app/forex_bot/models/saved /app/forex_bot/logs /app/forex_bot/analysis 2>/dev/null\nexec gosu botuser "$@"\n' > /entrypoint.sh \
     && chmod +x /entrypoint.sh
 
 # Instalar gosu para drop de privilegios

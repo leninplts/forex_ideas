@@ -11,16 +11,10 @@ services:
     entrypoint:
       - /bin/bash
       - -c
-      - |
-        # Fix 1: RPyC server debe correr en Wine Python (no Linux Python)
-        sed -i 's/python3 -m mt5linux .*/wine python.exe -m mt5linux --host 0.0.0.0 -p \$$mt5server_port \&/' /Metatrader/start.sh
-        # Fix 2: Pinear rpyc y numpy compatibles con Wine Python 3.9-32bit
-        sed -i 's/--no-cache-dir rpyc plumbum numpy/--no-cache-dir rpyc==5.2.3 plumbum "numpy<2"/' /Metatrader/start.sh
-        # Fix 3: Forzar versiones correctas ahora (ya cached de run anterior)
-        wine python.exe -m pip install rpyc==5.2.3 "numpy<2" 2>/dev/null || true
-        exec /init
+      - "python3 /fixes/patch_start.py && exec /init"
     volumes:
       - mt5_config:/config
+      - ./fixes:/fixes:ro
     ports:
       - "${VNC_PORT:-3000}:3000"     # VNC web UI - acceder via navegador
     expose:
