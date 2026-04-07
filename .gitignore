@@ -24,7 +24,6 @@ forex_bot/config/mt5_config.py
 .env
 
 # Modelos entrenados (pueden ser pesados)
-forex_bot/models/saved/*.pkl
 forex_bot/models/saved/*.joblib
 
 # Logs
