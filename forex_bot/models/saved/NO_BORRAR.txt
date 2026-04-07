@@ -1,0 +1,12 @@
+IMPORTANTE: NO BORRAR LOS ARCHIVOS .pkl DE ESTA CARPETA
+
+Los archivos .pkl son los modelos entrenados que el bot necesita para funcionar.
+Sin ellos, el bot NO puede arrancar y mostrara:
+  "No hay modelo entrenado"
+
+Si necesitas regenerar el modelo:
+  python scripts/train_production_model.py
+
+Archivos:
+  - ensemble_*.pkl       = modelo entrenado (XGBoost + LightGBM)
+  - ensemble_*.meta.json = metadata del modelo (features, fecha, etc.)
